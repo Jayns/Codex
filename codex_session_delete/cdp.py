@@ -4,7 +4,7 @@ import base64
 import json
 import threading
 import webbrowser
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from importlib import resources
 from pathlib import Path
 from typing import Callable
@@ -14,6 +14,7 @@ import websocket
 
 
 BridgeHandler = Callable[[str, dict[str, object]], dict[str, object]]
+InjectionCallback = Callable[["InjectionResult"], None]
 BRIDGE_BINDING_NAME = "codexSessionDeleteV2"
 
 
@@ -24,6 +25,32 @@ class InjectionResult:
     result: dict[str, object] | None
 
 
+@dataclass
+class MultiPageInjection:
+    injections: dict[str, InjectionResult] = field(default_factory=dict)
+    stop_event: threading.Event = field(default_factory=threading.Event)
+    watcher_thread: threading.Thread | None = None
+    lock: threading.Lock = field(default_factory=threading.Lock)
+
+    @property
+    def websocket_url(self) -> str | None:
+        with self.lock:
+            first = next(iter(self.injections.values()), None)
+        return first.websocket_url if first else None
+
+    @property
+    def bridge_socket(self) -> websocket.WebSocket | None:
+        with self.lock:
+            first = next((injection.bridge_socket for injection in self.injections.values() if injection.bridge_socket), None)
+        return first
+
+    @property
+    def result(self) -> dict[str, object] | None:
+        with self.lock:
+            first = next(iter(self.injections.values()), None)
+        return first.result if first else None
+
+
 def list_targets(port: int) -> list[dict[str, object]]:
     session = requests.Session()
     session.trust_env = False
@@ -32,13 +59,20 @@ def list_targets(port: int) -> list[dict[str, object]]:
     return response.json()
 
 
-def pick_page_target(targets: list[dict[str, object]]) -> dict[str, object]:
+def codex_page_targets(targets: list[dict[str, object]]) -> list[dict[str, object]]:
     pages = [target for target in targets if target.get("type") == "page" and target.get("webSocketDebuggerUrl")]
+    codex_pages = []
     for target in pages:
         title = str(target.get("title", ""))
         url = str(target.get("url", ""))
-        if "codex" in (title + " " + url).lower():
-            return target
+        haystack = (title + " " + url).lower()
+        if "codex" in haystack or url.startswith("app://"):
+            codex_pages.append(target)
+    return codex_pages or pages
+
+
+def pick_page_target(targets: list[dict[str, object]]) -> dict[str, object]:
+    pages = codex_page_targets(targets)
     if pages:
         return pages[0]
     raise RuntimeError("No injectable Codex page target found")
@@ -150,21 +184,84 @@ def sponsor_image_data_uris() -> dict[str, str]:
     }
 
 
-def inject_file(port: int, script_path: Path, helper_port: int, handler: BridgeHandler | None = None) -> InjectionResult:
-    targets = list_targets(port)
-    target = pick_page_target(targets)
-    websocket_url = str(target["webSocketDebuggerUrl"])
+def target_key(target: dict[str, object]) -> str:
+    return str(target.get("id") or target.get("webSocketDebuggerUrl") or "")
+
+
+def build_full_injection_script(script_path: Path, helper_port: int) -> str:
     script = script_path.read_text(encoding="utf-8")
     prefix = (
         f"window.__CODEX_SESSION_DELETE_HELPER__ = 'http://127.0.0.1:{helper_port}';\n"
         f"window.__CODEX_PLUS_SPONSOR_IMAGES__ = {json.dumps(sponsor_image_data_uris())};\n"
     )
-    full_script = prefix + script
+    return prefix + script
+
+
+def inject_target(target: dict[str, object], full_script: str, handler: BridgeHandler | None = None) -> InjectionResult:
+    websocket_url = str(target["webSocketDebuggerUrl"])
     bridge_socket = install_bridge(websocket_url, BRIDGE_BINDING_NAME, handler, [full_script]) if handler else None
     if not bridge_socket:
         add_script_to_new_documents(websocket_url, full_script)
     result = evaluate_script(websocket_url, full_script)
     return InjectionResult(websocket_url=websocket_url, bridge_socket=bridge_socket, result=result)
+
+
+def inject_file(port: int, script_path: Path, helper_port: int, handler: BridgeHandler | None = None) -> InjectionResult:
+    target = pick_page_target(list_targets(port))
+    return inject_target(target, build_full_injection_script(script_path, helper_port), handler)
+
+
+def inject_file_into_all_pages(
+    port: int,
+    script_path: Path,
+    helper_port: int,
+    handler: BridgeHandler | None = None,
+    on_injection: InjectionCallback | None = None,
+    poll_interval: float = 0.75,
+) -> MultiPageInjection:
+    manager = MultiPageInjection()
+    full_script = build_full_injection_script(script_path, helper_port)
+
+    def inject_available_pages() -> int:
+        injected = 0
+        last_error: Exception | None = None
+        for target in codex_page_targets(list_targets(port)):
+            key = target_key(target)
+            with manager.lock:
+                already_injected = key in manager.injections
+            if not key or already_injected:
+                continue
+            try:
+                injection = inject_target(target, full_script, handler)
+                with manager.lock:
+                    manager.injections[key] = injection
+                if on_injection:
+                    on_injection(injection)
+                injected += 1
+            except Exception as exc:
+                last_error = exc
+        with manager.lock:
+            has_injections = bool(manager.injections)
+        if not has_injections and last_error is not None:
+            raise last_error
+        return injected
+
+    inject_available_pages()
+    with manager.lock:
+        has_injections = bool(manager.injections)
+    if not has_injections:
+        raise RuntimeError("No injectable Codex page target found")
+
+    def watch_pages() -> None:
+        while not manager.stop_event.wait(poll_interval):
+            try:
+                inject_available_pages()
+            except Exception:
+                continue
+
+    manager.watcher_thread = threading.Thread(target=watch_pages, daemon=True)
+    manager.watcher_thread.start()
+    return manager
 
 
 def _bridge_loop(ws: websocket.WebSocket, handler: BridgeHandler) -> None:

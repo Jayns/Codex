@@ -8,7 +8,7 @@ import sys
 import threading
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +16,8 @@ from codex_session_delete import cdp
 from codex_session_delete.app_paths import resolve_codex_app_dir
 from codex_session_delete.api_adapter import ApiAdapter, UnavailableApiAdapter
 from codex_session_delete.backup_store import BackupStore
-from codex_session_delete.cdp import evaluate_user_scripts, inject_file, open_devtools
+from codex_session_delete.cdp import evaluate_user_scripts, open_devtools
+from codex_session_delete.cdp import inject_file_into_all_pages
 from codex_session_delete.helper_server import HelperServer
 from codex_session_delete.helper_server import fetch_ad_list
 from codex_session_delete.markdown_exporter import MarkdownExportService
@@ -75,11 +76,32 @@ class CodexPlusRuntime:
     websocket_url: str | None
     user_scripts: UserScriptManager
     debug_port: int | None = None
+    websocket_urls: set[str] = field(default_factory=set)
+    lock: threading.Lock = field(default_factory=threading.Lock)
+
+    def add_websocket_url(self, websocket_url: str) -> None:
+        with self.lock:
+            self.websocket_url = websocket_url
+            self.websocket_urls.add(websocket_url)
 
     def reload_user_scripts(self) -> dict[str, object]:
-        if self.websocket_url:
-            evaluate_user_scripts(self.websocket_url, self.user_scripts.build_enabled_bundle())
-        return self.user_scripts.inventory()
+        script = self.user_scripts.build_enabled_bundle()
+        with self.lock:
+            websocket_urls = list(self.websocket_urls or ({self.websocket_url} if self.websocket_url else set()))
+        failed_urls = []
+        for websocket_url in websocket_urls:
+            try:
+                evaluate_user_scripts(websocket_url, script)
+            except Exception:
+                failed_urls.append(websocket_url)
+        if failed_urls:
+            with self.lock:
+                self.websocket_urls.difference_update(failed_urls)
+                if self.websocket_url in failed_urls:
+                    self.websocket_url = next(iter(self.websocket_urls), None)
+        inventory = self.user_scripts.inventory()
+        inventory["target_count"] = len(websocket_urls) - len(failed_urls)
+        return inventory
 
     def open_devtools(self) -> dict[str, object]:
         if self.debug_port is None:
@@ -315,15 +337,20 @@ def inject_with_retry(
     last_error: Exception | None = None
     for _ in range(attempts):
         try:
-            injection = inject_file(
+            def on_injection(injection):
+                runtime.add_websocket_url(injection.websocket_url)
+                evaluate_user_scripts(injection.websocket_url, runtime.user_scripts.build_enabled_bundle())
+
+            injection = inject_file_into_all_pages(
                 debug_port,
                 script_path,
                 helper_port,
                 lambda path, payload: handle_bridge_request(service, export_service, path, payload, runtime),
+                on_injection=on_injection,
             )
-            runtime.websocket_url = injection.websocket_url
-            evaluate_user_scripts(injection.websocket_url, runtime.user_scripts.build_enabled_bundle())
-            return injection.bridge_socket or injection.result
+            if injection.websocket_url:
+                runtime.add_websocket_url(injection.websocket_url)
+            return injection
         except Exception as exc:
             last_error = exc
             time.sleep(delay)

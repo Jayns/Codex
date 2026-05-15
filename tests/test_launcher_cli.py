@@ -56,6 +56,9 @@ def test_launch_codex_injects_detected_local_proxy(monkeypatch):
     monkeypatch.delenv("HTTP_PROXY", raising=False)
     monkeypatch.delenv("HTTPS_PROXY", raising=False)
     monkeypatch.delenv("ALL_PROXY", raising=False)
+    monkeypatch.delenv("http_proxy", raising=False)
+    monkeypatch.delenv("https_proxy", raising=False)
+    monkeypatch.delenv("all_proxy", raising=False)
     monkeypatch.setattr(launcher, "local_proxy_url", lambda: "http://127.0.0.1:7897")
     monkeypatch.setattr(launcher.subprocess, "Popen", lambda args, **kw: popen_calls.append((args, kw)))
 
@@ -191,13 +194,13 @@ def test_launch_retries_injection_until_codex_page_is_ready(monkeypatch, tmp_pat
     monkeypatch.setattr(launcher, "start_helper", lambda *args, **kwargs: FakeServer())
     monkeypatch.setattr(launcher, "launch_codex_app", lambda *args: None)
 
-    def inject_after_retry(*args):
+    def inject_after_retry(*args, **kwargs):
         attempts.append(args)
         if len(attempts) == 1:
             raise RuntimeError("CDP page not ready")
         return launcher.cdp.InjectionResult(websocket_url="ws://page", bridge_socket=None, result={"result": {}})
 
-    monkeypatch.setattr(launcher, "inject_file", inject_after_retry)
+    monkeypatch.setattr(launcher, "inject_file_into_all_pages", inject_after_retry)
     monkeypatch.setattr(launcher, "evaluate_user_scripts", lambda websocket_url, script: None)
     monkeypatch.setattr(launcher.time, "sleep", lambda seconds: None)
 
@@ -205,6 +208,67 @@ def test_launch_retries_injection_until_codex_page_is_ready(monkeypatch, tmp_pat
 
     assert server.port == 57321
     assert len(attempts) == 2
+
+
+def test_inject_with_retry_tracks_all_injected_page_targets(monkeypatch, tmp_path):
+    evaluations = []
+    runtime = launcher.CodexPlusRuntime(
+        None,
+        type("Scripts", (), {"build_enabled_bundle": lambda self: "window.__userScript = true;"})(),
+        9229,
+    )
+    injections = {
+        "main": launcher.cdp.InjectionResult(websocket_url="ws://main", bridge_socket=None, result={"result": "main"}),
+        "child": launcher.cdp.InjectionResult(websocket_url="ws://child", bridge_socket=None, result={"result": "child"}),
+    }
+
+    def inject_pages(*args, **kwargs):
+        for injection in injections.values():
+            kwargs["on_injection"](injection)
+        return launcher.cdp.MultiPageInjection(injections=injections)
+
+    monkeypatch.setattr(launcher, "inject_file_into_all_pages", inject_pages)
+    monkeypatch.setattr(launcher, "evaluate_user_scripts", lambda websocket_url, script: evaluations.append((websocket_url, script)))
+
+    result = launcher.inject_with_retry(9229, tmp_path / "renderer.js", 57321, object(), object(), runtime)
+
+    assert result.websocket_url == "ws://main"
+    assert runtime.websocket_urls == {"ws://main", "ws://child"}
+    assert evaluations == [
+        ("ws://main", "window.__userScript = true;"),
+        ("ws://child", "window.__userScript = true;"),
+    ]
+
+
+def test_reload_user_scripts_drops_closed_page_targets(monkeypatch):
+    evaluations = []
+    runtime = launcher.CodexPlusRuntime(
+        "ws://closed",
+        type(
+            "Scripts",
+            (),
+            {
+                "build_enabled_bundle": lambda self: "window.__userScript = true;",
+                "inventory": lambda self: {"global_enabled": True},
+            },
+        )(),
+        9229,
+    )
+    runtime.websocket_urls.update({"ws://closed", "ws://open"})
+
+    def evaluate(websocket_url, script):
+        evaluations.append((websocket_url, script))
+        if websocket_url == "ws://closed":
+            raise RuntimeError("target closed")
+
+    monkeypatch.setattr(launcher, "evaluate_user_scripts", evaluate)
+
+    result = runtime.reload_user_scripts()
+
+    assert result["target_count"] == 1
+    assert runtime.websocket_urls == {"ws://open"}
+    assert runtime.websocket_url == "ws://open"
+    assert ("ws://open", "window.__userScript = true;") in evaluations
 
 
 def test_launch_and_inject_returns_windows_packaged_process_id(monkeypatch, tmp_path):

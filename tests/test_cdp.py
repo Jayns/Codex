@@ -5,7 +5,7 @@ from pathlib import Path
 import codex_session_delete.cdp as cdp
 import websocket
 
-from codex_session_delete.cdp import BRIDGE_BINDING_NAME, _bridge_loop, add_script_to_new_documents, build_bridge_script, evaluate_user_scripts, install_bridge, list_targets, open_devtools, pick_page_target
+from codex_session_delete.cdp import BRIDGE_BINDING_NAME, _bridge_loop, add_script_to_new_documents, build_bridge_script, codex_page_targets, evaluate_user_scripts, install_bridge, list_targets, open_devtools, pick_page_target
 
 
 class TimeoutThenMessageSocket:
@@ -57,6 +57,15 @@ class BridgeInstallSocket:
         return json.dumps(response)
 
 
+class FakeThread:
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+        self.started = False
+
+    def start(self):
+        self.started = True
+
+
 def test_pick_page_target_prefers_codex_title():
     targets = [
         {"type": "background_page", "title": "bg", "webSocketDebuggerUrl": "ws://bg"},
@@ -64,6 +73,17 @@ def test_pick_page_target_prefers_codex_title():
     ]
 
     assert pick_page_target(targets)["webSocketDebuggerUrl"] == "ws://page"
+
+
+def test_codex_page_targets_keeps_all_codex_windows():
+    targets = [
+        {"id": "devtools", "type": "page", "title": "DevTools", "url": "devtools://devtools", "webSocketDebuggerUrl": "ws://devtools"},
+        {"id": "main", "type": "page", "title": "Codex", "url": "app://-/index.html", "webSocketDebuggerUrl": "ws://main"},
+        {"id": "child", "type": "page", "title": "Codex", "url": "app://-/index.html?initialRoute=%2Flocal%2F1", "webSocketDebuggerUrl": "ws://child"},
+        {"id": "worker", "type": "worker", "title": "", "url": "", "webSocketDebuggerUrl": "ws://worker"},
+    ]
+
+    assert [target["id"] for target in codex_page_targets(targets)] == ["main", "child"]
 
 
 def test_list_targets_bypasses_proxy_environment(monkeypatch):
@@ -159,6 +179,58 @@ def test_inject_file_exposes_packaged_sponsor_images_as_data_uris(monkeypatch, t
     assert '"alipay": "data:image/jpeg;base64,' in captured["evaluated"]
     assert '"wechat": "data:image/jpeg;base64,' in captured["evaluated"]
     assert captured["new_document"] == captured["evaluated"]
+
+
+def test_inject_file_into_all_pages_injects_existing_codex_windows(monkeypatch, tmp_path):
+    script_path = tmp_path / "renderer.js"
+    script_path.write_text("window.__rendererLoaded = true;", encoding="utf-8")
+    thread = FakeThread()
+    targets = [
+        {"id": "main", "type": "page", "title": "Codex", "url": "app://-/index.html", "webSocketDebuggerUrl": "ws://main"},
+        {"id": "child", "type": "page", "title": "Codex", "url": "app://-/index.html?initialRoute=%2Flocal%2F1", "webSocketDebuggerUrl": "ws://child"},
+        {"id": "worker", "type": "worker", "title": "", "url": "", "webSocketDebuggerUrl": "ws://worker"},
+    ]
+    injected = []
+    callbacks = []
+
+    def fake_inject_target(target, full_script, handler):
+        injected.append((target["id"], full_script))
+        return cdp.InjectionResult(websocket_url=target["webSocketDebuggerUrl"], bridge_socket=None, result={"status": target["id"]})
+
+    monkeypatch.setattr(cdp, "list_targets", lambda port: targets)
+    monkeypatch.setattr(cdp, "inject_target", fake_inject_target)
+    monkeypatch.setattr(cdp.threading, "Thread", lambda **kwargs: thread)
+
+    manager = cdp.inject_file_into_all_pages(9229, script_path, 57321, lambda path, payload: {}, on_injection=callbacks.append)
+
+    assert [item[0] for item in injected] == ["main", "child"]
+    assert "window.__CODEX_SESSION_DELETE_HELPER__ = 'http://127.0.0.1:57321';" in injected[0][1]
+    assert sorted(manager.injections) == ["child", "main"]
+    assert [callback.websocket_url for callback in callbacks] == ["ws://main", "ws://child"]
+    assert manager.websocket_url == "ws://main"
+    assert thread.started is True
+
+
+def test_inject_file_into_all_pages_keeps_successful_targets_when_one_fails(monkeypatch, tmp_path):
+    script_path = tmp_path / "renderer.js"
+    script_path.write_text("window.__rendererLoaded = true;", encoding="utf-8")
+    targets = [
+        {"id": "main", "type": "page", "title": "Codex", "url": "app://-/index.html", "webSocketDebuggerUrl": "ws://main"},
+        {"id": "child", "type": "page", "title": "Codex", "url": "app://-/index.html?initialRoute=%2Flocal%2F1", "webSocketDebuggerUrl": "ws://child"},
+    ]
+
+    def fake_inject_target(target, full_script, handler):
+        if target["id"] == "child":
+            raise RuntimeError("page still loading")
+        return cdp.InjectionResult(websocket_url=target["webSocketDebuggerUrl"], bridge_socket=None, result={"status": target["id"]})
+
+    monkeypatch.setattr(cdp, "list_targets", lambda port: targets)
+    monkeypatch.setattr(cdp, "inject_target", fake_inject_target)
+    monkeypatch.setattr(cdp.threading, "Thread", lambda **kwargs: FakeThread())
+
+    manager = cdp.inject_file_into_all_pages(9229, script_path, 57321)
+
+    assert sorted(manager.injections) == ["main"]
 
 
 def test_open_devtools_opens_chrome_devtools_frontend(monkeypatch):
