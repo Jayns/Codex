@@ -20,6 +20,9 @@ pub mod models;
 pub mod native_menu;
 pub mod paths;
 pub mod plugin_marketplace;
+pub mod portable;
+#[cfg(windows)]
+pub mod portable_dialog;
 pub mod ports;
 pub mod protocol_proxy;
 pub mod provider_import;

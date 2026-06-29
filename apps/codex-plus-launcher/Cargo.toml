@@ -9,6 +9,10 @@ repository.workspace = true
 name = "codex-plus-plus"
 path = "src/main.rs"
 
+[[bin]]
+name = "codex"
+path = "src/portable_main.rs"
+
 [dependencies]
 anyhow.workspace = true
 async-trait = "0.1"

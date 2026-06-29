@@ -292,7 +292,7 @@ impl Default for BackendSettings {
         Self {
             codex_app_path: String::new(),
             codex_extra_args: Vec::new(),
-            provider_sync_enabled: false,
+            provider_sync_enabled: true,
             provider_sync_saved_providers: Vec::new(),
             provider_sync_manual_providers: Vec::new(),
             provider_sync_last_selected_provider: String::new(),
@@ -1004,7 +1004,7 @@ mod tests {
     #[test]
     fn settings_default_matches_expected_behavior() {
         let settings = BackendSettings::default();
-        assert!(!settings.provider_sync_enabled);
+        assert!(settings.provider_sync_enabled);
         assert!(settings.relay_profiles_enabled);
         assert!(settings.enhancements_enabled);
         assert!(!settings.computer_use_guard_enabled);
