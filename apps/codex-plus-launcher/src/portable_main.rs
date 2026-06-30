@@ -88,25 +88,26 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-/// Polls for the Codex window and applies the original Codex App icon to it
-/// (taskbar + window), retrying for ~15s while Codex finishes starting. The
-/// icon is taken from each Codex process's own executable, so the genuine
-/// Codex icon is used rather than the launcher's icon.
+/// The original Codex App icon, bundled into the launcher so we don't depend on
+/// extracting it from the running Codex.exe (which is timing- and
+/// resource-layout-sensitive). Sourced from `codex_app/app/resources/icon.ico`.
+#[cfg(windows)]
+const CODEX_APP_ICON: &[u8] = include_bytes!("../assets/codex-app-icon.ico");
+
+/// Polls for the Codex window and applies the bundled original Codex App icon
+/// to it (taskbar + window), retrying for ~15s while Codex finishes starting.
 #[cfg(windows)]
 fn apply_window_icon_to_codex() {
+    let Some(icon_path) = materialize_bundled_icon() else {
+        return;
+    };
     tokio::spawn(async move {
         for _ in 0..30 {
             let mut applied = false;
-            for process in codex_plus_core::windows_enumerate_processes() {
-                if !process.exe_file.eq_ignore_ascii_case("Codex.exe") {
-                    continue;
-                }
-                let Some(exe_path) = process.executable_path.clone() else {
-                    continue;
-                };
+            for pid in codex_plus_core::watcher::find_codex_processes() {
                 if codex_plus_core::windows_apply_codexplusplus_icon_to_process_window(
-                    process.process_id,
-                    exe_path,
+                    pid,
+                    icon_path.clone(),
                 ) {
                     applied = true;
                 }
@@ -117,4 +118,19 @@ fn apply_window_icon_to_codex() {
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         }
     });
+}
+
+/// Writes the bundled icon to a stable temp path once so the existing
+/// file-based icon loader can use it. Returns the path, or `None` on failure.
+#[cfg(windows)]
+fn materialize_bundled_icon() -> Option<std::path::PathBuf> {
+    let path = std::env::temp_dir().join("codex-portable-app-icon.ico");
+    let needs_write = match std::fs::metadata(&path) {
+        Ok(meta) => meta.len() != CODEX_APP_ICON.len() as u64,
+        Err(_) => true,
+    };
+    if needs_write && std::fs::write(&path, CODEX_APP_ICON).is_err() {
+        return None;
+    }
+    Some(path)
 }
