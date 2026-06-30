@@ -73,10 +73,40 @@ async fn main() -> Result<()> {
     };
     let handle = launch_and_inject_with_hooks(options, &hooks).await?;
 
+    // Apply this exe's embedded icon to the Codex window's taskbar entry. The
+    // core only does this for packaged (MSIX) launches; the portable loose-folder
+    // Codex.exe otherwise shows a blank/default taskbar icon.
+    #[cfg(windows)]
+    apply_window_icon_to_codex();
+
     // Keep this process (and with it the helper + CDP bridge that back the
     // injected enhancements) alive until Codex exits. The core wait detects the
     // loose-folder Codex.exe used by the portable build, so no special handling
     // is needed here.
     handle.wait_for_codex_exit().await?;
     Ok(())
+}
+
+/// Polls for the Codex window and applies this launcher exe's embedded icon to
+/// it (taskbar + window), retrying for ~15s while Codex finishes starting.
+#[cfg(windows)]
+fn apply_window_icon_to_codex() {
+    let icon_path = std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("codex.exe"));
+    tokio::spawn(async move {
+        for _ in 0..30 {
+            let mut applied = false;
+            for pid in codex_plus_core::watcher::find_codex_processes() {
+                if codex_plus_core::windows_apply_codexplusplus_icon_to_process_window(
+                    pid,
+                    icon_path.clone(),
+                ) {
+                    applied = true;
+                }
+            }
+            if applied {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
+    });
 }
