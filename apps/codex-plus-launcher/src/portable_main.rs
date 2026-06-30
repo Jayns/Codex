@@ -73,9 +73,10 @@ async fn main() -> Result<()> {
     };
     let handle = launch_and_inject_with_hooks(options, &hooks).await?;
 
-    // Apply this exe's embedded icon to the Codex window's taskbar entry. The
-    // core only does this for packaged (MSIX) launches; the portable loose-folder
-    // Codex.exe otherwise shows a blank/default taskbar icon.
+    // Restore Codex's own taskbar icon. The core only sets a window icon for
+    // packaged (MSIX) launches; the portable loose-folder Codex.exe otherwise
+    // shows a blank/default taskbar icon. Apply each Codex process's own
+    // executable icon so the original Codex App icon is used.
     #[cfg(windows)]
     apply_window_icon_to_codex();
 
@@ -87,18 +88,25 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-/// Polls for the Codex window and applies this launcher exe's embedded icon to
-/// it (taskbar + window), retrying for ~15s while Codex finishes starting.
+/// Polls for the Codex window and applies the original Codex App icon to it
+/// (taskbar + window), retrying for ~15s while Codex finishes starting. The
+/// icon is taken from each Codex process's own executable, so the genuine
+/// Codex icon is used rather than the launcher's icon.
 #[cfg(windows)]
 fn apply_window_icon_to_codex() {
-    let icon_path = std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("codex.exe"));
     tokio::spawn(async move {
         for _ in 0..30 {
             let mut applied = false;
-            for pid in codex_plus_core::watcher::find_codex_processes() {
+            for process in codex_plus_core::windows_enumerate_processes() {
+                if !process.exe_file.eq_ignore_ascii_case("Codex.exe") {
+                    continue;
+                }
+                let Some(exe_path) = process.executable_path.clone() else {
+                    continue;
+                };
                 if codex_plus_core::windows_apply_codexplusplus_icon_to_process_window(
-                    pid,
-                    icon_path.clone(),
+                    process.process_id,
+                    exe_path,
                 ) {
                     applied = true;
                 }
