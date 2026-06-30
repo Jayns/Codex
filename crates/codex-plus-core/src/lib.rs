@@ -70,3 +70,16 @@ pub fn windows_apply_codexplusplus_icon_to_process_window(
 pub fn windows_enumerate_processes() -> Vec<windows_integration::WindowsProcessInfo> {
     windows_integration::enumerate_processes()
 }
+
+#[cfg(windows)]
+pub use windows_integration::ShortcutSpec;
+
+#[cfg(windows)]
+pub fn windows_desktop_dir() -> Option<std::path::PathBuf> {
+    windows_integration::desktop_dir()
+}
+
+#[cfg(windows)]
+pub fn windows_create_shortcut(spec: &ShortcutSpec) -> anyhow::Result<()> {
+    windows_integration::create_shortcut(spec)
+}

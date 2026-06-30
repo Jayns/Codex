@@ -40,6 +40,7 @@ async fn main() -> Result<()> {
     }
 
     // Silent fast path: already configured and not explicitly asked to edit.
+    let mut configured_via_dialog = false;
     let config = if existing.is_complete() && !force_config {
         existing
     } else {
@@ -53,6 +54,7 @@ async fn main() -> Result<()> {
         if !edited.is_complete() {
             return Ok(());
         }
+        configured_via_dialog = true;
         edited
     };
 
@@ -67,7 +69,7 @@ async fn main() -> Result<()> {
     hooks.apply_active_relay_profile(&settings).await?;
 
     let options = LaunchOptions {
-        app_dir: Some(app_dir),
+        app_dir: Some(app_dir.clone()),
         debug_port: config.debug_port,
         ..LaunchOptions::default()
     };
@@ -75,10 +77,20 @@ async fn main() -> Result<()> {
 
     // Restore Codex's own taskbar icon. The core only sets a window icon for
     // packaged (MSIX) launches; the portable loose-folder Codex.exe otherwise
-    // shows a blank/default taskbar icon. Apply each Codex process's own
-    // executable icon so the original Codex App icon is used.
+    // shows a blank/default taskbar icon.
     #[cfg(windows)]
     apply_window_icon_to_codex();
+
+    // When the user just configured and launched, drop a desktop shortcut so
+    // they can relaunch without opening the portable folder. Created only on
+    // the configure path and only if one doesn't already exist, so a user who
+    // deletes it isn't fought.
+    #[cfg(windows)]
+    if configured_via_dialog {
+        let _ = create_desktop_shortcut(&app_dir);
+    }
+    #[cfg(not(windows))]
+    let _ = configured_via_dialog;
 
     // Keep this process (and with it the helper + CDP bridge that back the
     // injected enhancements) alive until Codex exits. The core wait detects the
@@ -86,6 +98,37 @@ async fn main() -> Result<()> {
     // is needed here.
     handle.wait_for_codex_exit().await?;
     Ok(())
+}
+
+/// Creates a "Codex" desktop shortcut to this launcher (with the original Codex
+/// App icon), unless one already exists. Best-effort: failures are ignored.
+#[cfg(windows)]
+fn create_desktop_shortcut(app_dir: &std::path::Path) -> anyhow::Result<()> {
+    let Some(desktop) = codex_plus_core::windows_desktop_dir() else {
+        return Ok(());
+    };
+    let shortcut_path = desktop.join("Codex.lnk");
+    if shortcut_path.exists() {
+        return Ok(());
+    }
+    let exe = std::env::current_exe()?;
+    let working_directory = exe.parent().map(|parent| parent.to_path_buf());
+    let icon = [
+        app_dir.join("app").join("resources").join("icon.ico"),
+        app_dir.join("resources").join("icon.ico"),
+    ]
+    .into_iter()
+    .find(|candidate| candidate.exists());
+
+    codex_plus_core::windows_create_shortcut(&codex_plus_core::ShortcutSpec {
+        path: shortcut_path,
+        target: exe.clone(),
+        arguments: String::new(),
+        working_directory,
+        description: "Codex".to_string(),
+        icon,
+        show_minimized: false,
+    })
 }
 
 /// The original Codex App icon, bundled into the launcher so we don't depend on
