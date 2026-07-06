@@ -21,7 +21,7 @@ pub mod native_menu;
 pub mod paths;
 pub mod plugin_marketplace;
 pub mod portable;
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 pub mod portable_dialog;
 pub mod ports;
 pub mod protocol_proxy;
