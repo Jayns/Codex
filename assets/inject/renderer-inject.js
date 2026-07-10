@@ -2502,14 +2502,6 @@
               <button type="button" class="codex-plus-toggle" data-codex-backend-setting="providerSyncEnabled"><span></span></button>
             </div>
             <div class="codex-plus-row">
-              <div><div class="codex-plus-row-title">页面增强模式</div><div class="codex-plus-row-description">${codexPlusBackendSettings.launchMode === "relay" ? "兼容增强：保留会话删除、导出、项目移动和用户脚本，仅关闭插件市场相关增强。" : "完整增强：加载插件市场、项目路径移动等全部页面能力。"}</div></div>
-              <button type="button" class="codex-plus-action-button" data-codex-open-manager="true">打开管理工具</button>
-            </div>
-            <div class="codex-plus-row">
-              <div><div class="codex-plus-row-title">原生菜单栏位置</div><div class="codex-plus-row-description">把 Codex++ 菜单插入顶部原生菜单栏；默认关闭以避免页面重渲染冲突。</div></div>
-              <button type="button" class="codex-plus-toggle" data-codex-plus-setting="nativeMenuPlacement"><span></span></button>
-            </div>
-            <div class="codex-plus-row">
               <div><div class="codex-plus-row-title">打开 DevTools</div><div class="codex-plus-row-description">打开当前 Codex 页面开发者工具，方便查看用户脚本报错。</div></div>
               <button type="button" class="codex-plus-action-button" data-codex-open-devtools="true">打开 DevTools</button>
             </div>

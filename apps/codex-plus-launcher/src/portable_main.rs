@@ -1,11 +1,15 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 //! Entry point for the portable launcher build: a single self-contained
-//! folder (exe + `codex_app\` + `config.ini`) that can be copied to another
-//! machine and run without an installer. Unlike the installed launcher
-//! (`main.rs`), configuration lives in `config.ini` next to the executable
-//! instead of `%USERPROFILE%`, and is edited through a small native dialog
-//! rather than the separate manager app.
+//! folder (exe + `config.ini`, plus a bundled `codex_app\` on Windows) that
+//! can be copied to another machine and run without an installer. Unlike the
+//! installed launcher (`main.rs`), configuration lives in `config.ini` next
+//! to the executable instead of `%USERPROFILE%`, and is edited through a
+//! small native dialog rather than the separate manager app.
+//!
+//! On macOS there is no bundled Codex App copy: the Codex App path defaults
+//! to whatever `Codex.app` is already installed under `/Applications` /
+//! `~/Applications` (see `platform_default_app_dir` below).
 //!
 //! The underlying launch/inject mechanism (CDP bridge, relay config) is
 //! unchanged and reused as-is from `codex_plus_launcher::LauncherHooks`.
@@ -30,13 +34,13 @@ async fn main() -> Result<()> {
     let config_path = codex_plus_core::portable::default_portable_config_path();
     let mut existing = PortableConfig::load(&config_path);
 
-    // Pre-fill the Codex App path with the bundled `codex_app` folder next to
-    // the executable when the user hasn't set one, so the dialog shows a sane
-    // default instead of an empty field.
+    // Pre-fill the Codex App path with a sane platform default when the user
+    // hasn't set one, so the dialog shows something useful instead of an
+    // empty field.
     if existing.codex_app_dir.trim().is_empty() {
-        existing.codex_app_dir = codex_plus_core::portable::default_portable_app_dir()
-            .to_string_lossy()
-            .into_owned();
+        if let Some(app_dir) = platform_default_app_dir() {
+            existing.codex_app_dir = app_dir.to_string_lossy().into_owned();
+        }
     }
 
     // Silent fast path: already configured and not explicitly asked to edit.
@@ -59,7 +63,11 @@ async fn main() -> Result<()> {
     };
 
     let app_dir = if config.codex_app_dir.trim().is_empty() {
-        codex_plus_core::portable::default_portable_app_dir()
+        platform_default_app_dir().ok_or_else(|| {
+            anyhow::anyhow!(
+                "未找到已安装的 Codex App，请运行 `codex --config` 手动选择 Codex.app 的路径"
+            )
+        })?
     } else {
         std::path::PathBuf::from(&config.codex_app_dir)
     };
@@ -98,6 +106,22 @@ async fn main() -> Result<()> {
     // is needed here.
     handle.wait_for_codex_exit().await?;
     Ok(())
+}
+
+/// Platform-appropriate default Codex App location: the bundled `codex_app`
+/// folder next to the executable on Windows (the portable package ships its
+/// own copy there), or the already-installed `Codex.app` under
+/// `/Applications` / `~/Applications` on macOS (the portable package does not
+/// bundle its own copy on that platform).
+fn platform_default_app_dir() -> Option<std::path::PathBuf> {
+    #[cfg(windows)]
+    {
+        Some(codex_plus_core::portable::default_portable_app_dir())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        codex_plus_core::app_paths::find_macos_codex_app_default()
+    }
 }
 
 /// Creates a "Codex" desktop shortcut to this launcher (with the original Codex

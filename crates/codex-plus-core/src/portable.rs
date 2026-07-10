@@ -171,19 +171,81 @@ fn parse_ini_section(contents: &str, section: &str) -> HashMap<String, String> {
 }
 
 /// Default `config.ini` path: next to the running executable (portable layout).
+///
+/// On macOS the launcher is packaged as `Codex++ Portable.app` so double-
+/// clicking it doesn't spawn a Terminal window (see
+/// `scripts/installer/macos/package-portable.sh`), which means the running
+/// executable actually lives at `Codex++ Portable.app/Contents/MacOS/codex`.
+/// Anchoring `config.ini` there would bury it inside the bundle, so this
+/// resolves to the directory *containing* the `.app` instead, keeping the
+/// portable folder a flat `Codex++ Portable.app` + `config.ini` layout.
 pub fn default_portable_config_path() -> PathBuf {
-    std::env::current_exe()
-        .ok()
-        .and_then(|path| path.parent().map(|parent| parent.join("config.ini")))
-        .unwrap_or_else(|| PathBuf::from("config.ini"))
+    portable_root_dir().join("config.ini")
 }
 
 /// Default bundled Codex App directory: `codex_app` next to the executable.
 pub fn default_portable_app_dir() -> PathBuf {
-    std::env::current_exe()
-        .ok()
-        .and_then(|path| path.parent().map(|parent| parent.join("codex_app")))
-        .unwrap_or_else(|| PathBuf::from("codex_app"))
+    portable_root_dir().join("codex_app")
+}
+
+fn portable_root_dir() -> PathBuf {
+    let Some(exe) = std::env::current_exe().ok() else {
+        return PathBuf::from(".");
+    };
+    #[cfg(target_os = "macos")]
+    if let Some(root) = macos_app_bundle_root(&exe) {
+        return root;
+    }
+    exe.parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
+/// If `exe` is `Foo.app/Contents/MacOS/exe`, returns the directory containing
+/// `Foo.app`. Returns `None` for a loose (non-bundled) executable, e.g. when
+/// running `cargo run` / the unpackaged binary directly during development.
+#[cfg(target_os = "macos")]
+fn macos_app_bundle_root(exe: &Path) -> Option<PathBuf> {
+    let macos_dir = exe.parent()?;
+    if macos_dir.file_name()? != "MacOS" {
+        return None;
+    }
+    let contents_dir = macos_dir.parent()?;
+    if contents_dir.file_name()? != "Contents" {
+        return None;
+    }
+    let app_dir = contents_dir.parent()?;
+    if app_dir.extension()? != "app" {
+        return None;
+    }
+    app_dir.parent().map(Path::to_path_buf)
+}
+
+#[cfg(target_os = "macos")]
+#[cfg(test)]
+mod macos_bundle_tests {
+    use super::*;
+
+    #[test]
+    fn resolves_root_for_bundled_executable() {
+        let exe = Path::new("/Applications/Codex++ Portable.app/Contents/MacOS/codex");
+        assert_eq!(
+            macos_app_bundle_root(exe),
+            Some(PathBuf::from("/Applications"))
+        );
+    }
+
+    #[test]
+    fn returns_none_for_loose_executable() {
+        let exe = Path::new("/Users/me/dev/target/release/codex");
+        assert_eq!(macos_app_bundle_root(exe), None);
+    }
+
+    #[test]
+    fn returns_none_when_app_extension_is_missing() {
+        let exe = Path::new("/Applications/NotAnApp/Contents/MacOS/codex");
+        assert_eq!(macos_app_bundle_root(exe), None);
+    }
 }
 
 #[cfg(test)]
