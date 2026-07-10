@@ -8,9 +8,9 @@
 #[cfg(windows)]
 mod win32;
 #[cfg(windows)]
-pub use win32::show_portable_config_dialog;
+pub use win32::{show_portable_config_dialog, show_portable_error_dialog};
 
 #[cfg(target_os = "macos")]
 mod cocoa;
 #[cfg(target_os = "macos")]
-pub use cocoa::show_portable_config_dialog;
+pub use cocoa::{show_portable_config_dialog, show_portable_error_dialog};

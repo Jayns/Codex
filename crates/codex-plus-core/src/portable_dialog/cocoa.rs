@@ -10,9 +10,9 @@ use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject};
 use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadOnly};
 use objc2_app_kit::{
-    NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSButton, NSModalResponse,
-    NSModalResponseCancel, NSModalResponseOK, NSOpenPanel, NSSecureTextField, NSTextField, NSView,
-    NSWindow, NSWindowDelegate, NSWindowStyleMask,
+    NSAlert, NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSButton,
+    NSModalResponse, NSModalResponseCancel, NSModalResponseOK, NSOpenPanel, NSSecureTextField,
+    NSTextField, NSView, NSWindow, NSWindowDelegate, NSWindowStyleMask,
 };
 use objc2_foundation::{
     ns_string, MainThreadMarker, NSDate, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect,
@@ -363,4 +363,21 @@ pub fn show_portable_config_dialog(
 
     let result = delegate.ivars().result.borrow_mut().take();
     Ok(result)
+}
+
+/// Shows a blocking native error alert. The portable launcher runs as a
+/// windowless `.app` (`LSUIElement`), so a startup failure written to stderr
+/// is invisible; this is the only way the user learns what failed.
+pub fn show_portable_error_dialog(message: &str) {
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
+    let app = NSApplication::sharedApplication(mtm);
+    app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
+    app.activate();
+    let alert = NSAlert::new(mtm);
+    alert.setMessageText(ns_string!("启动失败"));
+    alert.setInformativeText(&NSString::from_str(message));
+    alert.runModal();
+    app.setActivationPolicy(NSApplicationActivationPolicy::Prohibited);
 }

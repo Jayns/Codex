@@ -26,6 +26,17 @@ use codex_plus_launcher::LauncherHooks;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // The portable exe has no console (windows_subsystem = "windows" /
+    // LSUIElement .app), so a failure that only reaches stderr looks like
+    // "nothing happened". Surface it in a native error dialog instead.
+    if let Err(error) = run().await {
+        codex_plus_core::portable_dialog::show_portable_error_dialog(&format!("{error:#}"));
+        return Err(error);
+    }
+    Ok(())
+}
+
+async fn run() -> Result<()> {
     let force_config = std::env::args().skip(1).any(|arg| {
         let arg = arg.trim();
         arg == "--config" || arg == "--settings"

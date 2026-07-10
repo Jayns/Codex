@@ -30,7 +30,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     BN_CLICKED, BS_OWNERDRAW, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT,
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, ES_AUTOHSCROLL, ES_PASSWORD,
     GWLP_USERDATA, GetClientRect, GetMessageW, GetWindowLongPtrW, GetWindowRect,
-    GetWindowTextLengthW, GetWindowTextW, HMENU, IDC_ARROW, LoadCursorW, MSG, PostQuitMessage,
+    GetWindowTextLengthW, GetWindowTextW, HMENU, IDC_ARROW, LoadCursorW, MB_ICONERROR, MB_OK,
+    MSG, MessageBoxW, PostQuitMessage,
     RegisterClassExW, SWP_NOMOVE, SWP_NOZORDER, SW_SHOW, SendMessageW, SetWindowLongPtrW,
     SetWindowPos, SetWindowTextW, ShowWindow, TranslateMessage, WM_CLOSE, WM_COMMAND, WM_CREATE,
     WM_CTLCOLORSTATIC, WM_DESTROY, WM_DRAWITEM, WM_SETFONT, WNDCLASSEXW, WS_BORDER, WS_CAPTION,
@@ -533,6 +534,22 @@ fn read_edit_text(hwnd: HWND) -> String {
 
 fn wide_null(value: &str) -> Vec<u16> {
     OsStr::new(value).encode_wide().chain(once(0)).collect()
+}
+
+/// Shows a blocking native error dialog. The portable launcher is built with
+/// `windows_subsystem = "windows"` (no console), so a startup failure written
+/// to stderr is invisible; this is the only way the user learns what failed.
+pub fn show_portable_error_dialog(message: &str) {
+    let title = wide_null("Codex Launcher");
+    let text = wide_null(message);
+    unsafe {
+        MessageBoxW(
+            None,
+            PCWSTR(text.as_ptr()),
+            PCWSTR(title.as_ptr()),
+            MB_OK | MB_ICONERROR,
+        );
+    }
 }
 
 #[cfg(test)]
