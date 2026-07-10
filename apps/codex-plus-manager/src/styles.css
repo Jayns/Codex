@@ -1067,6 +1067,179 @@ body {
   animation-delay: 95ms;
 }
 
+.provider-doctor {
+  display: grid;
+  gap: 12px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: hsl(var(--muted) / 0.34);
+  padding: 12px;
+}
+
+.provider-doctor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.provider-doctor-head > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.provider-doctor-head strong {
+  font-size: 14px;
+}
+
+.provider-doctor-head span {
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.provider-doctor-result {
+  display: grid;
+  gap: 10px;
+}
+
+.provider-doctor-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: hsl(var(--foreground));
+  font-size: 13px;
+}
+
+.provider-doctor-checks {
+  display: grid;
+  gap: 8px;
+}
+
+.provider-doctor-check {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: hsl(var(--background));
+  padding: 10px;
+}
+
+.provider-doctor-check.ok svg {
+  color: hsl(156 64% 42%);
+}
+
+.provider-doctor-check.warning svg {
+  color: hsl(38 92% 50%);
+}
+
+.provider-doctor-check.failed svg {
+  color: hsl(0 72% 55%);
+}
+
+.provider-doctor-check strong {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 13px;
+}
+
+.provider-doctor-check span,
+.provider-doctor-recommendation {
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.provider-doctor-recommendation {
+  margin: 0;
+}
+
+.provider-doctor-modal {
+  max-width: 620px;
+}
+
+.provider-doctor-progress {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: hsl(var(--muted));
+}
+
+.provider-doctor-progress > div {
+  height: 100%;
+  border-radius: inherit;
+  background: hsl(var(--primary));
+  transition: width 240ms var(--motion-ease);
+}
+
+.provider-doctor-step-list {
+  display: grid;
+  gap: 10px;
+}
+
+.provider-doctor-step {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: hsl(var(--background));
+  padding: 12px;
+}
+
+.provider-doctor-step-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
+}
+
+.provider-doctor-step.running .provider-doctor-step-icon {
+  color: hsl(var(--primary));
+}
+
+.provider-doctor-step.running svg {
+  animation: spin 850ms linear infinite;
+}
+
+.provider-doctor-step.ok .provider-doctor-step-icon {
+  color: hsl(156 64% 42%);
+}
+
+.provider-doctor-step.warning .provider-doctor-step-icon {
+  color: hsl(38 92% 50%);
+}
+
+.provider-doctor-step.failed .provider-doctor-step-icon {
+  color: hsl(0 72% 55%);
+}
+
+.provider-doctor-step strong,
+.provider-doctor-step small {
+  display: block;
+}
+
+.provider-doctor-step small {
+  margin-top: 3px;
+  color: hsl(var(--muted-foreground));
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .aggregate-fields {
   margin-top: 0;
 }
@@ -1630,6 +1803,39 @@ body {
   margin: 12px 0;
 }
 
+.enhance-feature-groups {
+  display: grid;
+  gap: 12px;
+  margin: 14px 0;
+}
+
+.feature-group {
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: hsl(var(--muted) / 0.2);
+  padding: 12px;
+}
+
+.feature-group .feature-switch-grid {
+  margin: 10px 0 0;
+}
+
+.feature-group-head {
+  display: grid;
+  gap: 4px;
+}
+
+.feature-group-head strong {
+  color: hsl(var(--foreground));
+  font-size: 0.95rem;
+}
+
+.feature-group-head small {
+  color: hsl(var(--muted-foreground));
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
 .health-item,
 .feature-item,
 .theme-row {
@@ -1699,6 +1905,37 @@ body {
   color: hsl(var(--muted-foreground));
   font-size: 12px;
   line-height: 1.4;
+}
+
+.feature-action-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: hsl(var(--background));
+  padding: 11px 12px;
+}
+
+.feature-action-row strong,
+.feature-action-row small {
+  display: block;
+}
+
+.feature-action-row small {
+  margin-top: 3px;
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.feature-action-status {
+  color: hsl(var(--muted-foreground));
+  font-family: Consolas, "SFMono-Regular", monospace;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .switch-row {
@@ -2036,6 +2273,16 @@ body {
   transform: translateY(-1px);
 }
 
+.ad-image {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 5;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: #080808;
+  object-fit: cover;
+}
+
 .ad-card strong {
   display: block;
   margin-bottom: 5px;
@@ -2118,6 +2365,61 @@ body {
 .settings-block .form-row {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: end;
+}
+
+.settings-block .section-title {
+  margin-bottom: 12px;
+  color: hsl(var(--foreground));
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.stepwise-settings-block .form-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.stepwise-settings-section {
+  margin: -4px 0 12px;
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.stepwise-advanced {
+  margin-top: 2px;
+  border-top: 1px solid hsl(var(--border));
+}
+
+.stepwise-advanced summary {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  list-style: none;
+}
+
+.stepwise-advanced summary::-webkit-details-marker {
+  display: none;
+}
+
+.stepwise-advanced summary::after {
+  content: "›";
+  margin-left: 6px;
+  font-size: 15px;
+  transform: rotate(90deg);
+  transition: transform 120ms ease;
+}
+
+.stepwise-advanced[open] summary::after {
+  transform: rotate(270deg);
+}
+
+.stepwise-settings-actions {
+  justify-content: flex-end;
+  margin-top: 2px;
 }
 
 .settings-block .toolbar {
@@ -2718,6 +3020,17 @@ body {
 
   .health-item .inline-flex {
     grid-column: 2;
+    width: fit-content;
+  }
+
+  .feature-action-row {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .feature-action-row .inline-flex,
+  .feature-action-row button,
+  .feature-action-status {
     width: fit-content;
   }
 }

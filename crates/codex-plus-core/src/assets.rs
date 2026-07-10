@@ -6,12 +6,17 @@ use std::path::Path;
 use crate::settings::BackendSettings;
 
 const RENDERER_SCRIPT: &str = include_str!("../../../assets/inject/renderer-inject.js");
+const STEPWISE_SCRIPT: &str = include_str!("../../../assets/inject/stepwise-inject.js");
 const SPONSOR_ALIPAY: &[u8] = include_bytes!("../../../assets/images/sponsor-alipay.jpg");
 const SPONSOR_WECHAT: &[u8] = include_bytes!("../../../assets/images/sponsor-wechat.jpg");
 pub const DIAGNOSTIC_BUILD_ID: &str = "diag-20260518-1";
 
 pub fn renderer_script() -> &'static str {
     RENDERER_SCRIPT
+}
+
+pub fn stepwise_script() -> &'static str {
+    STEPWISE_SCRIPT
 }
 
 pub fn sponsor_image_data_uris() -> Value {
@@ -34,7 +39,7 @@ pub fn injection_script_with_settings(helper_port: u16, settings: &BackendSettin
     let force_chinese_locale = force_chinese_locale_config(settings);
     let fast_startup = fast_startup_config(settings);
     format!(
-        "window.__CODEX_SESSION_DELETE_HELPER__ = {};\nwindow.__CODEX_PLUS_SPONSOR_IMAGES__ = {};\nwindow.__CODEX_PLUS_VERSION__ = {};\nwindow.__CODEX_PLUS_BUILD__ = {};\nwindow.__CODEX_PLUS_IMAGE_OVERLAY__ = {};\nwindow.__CODEX_PLUS_PLUGIN_MARKETPLACES__ = {};\nwindow.__CODEX_PLUS_PASTE_FIX__ = {};\nwindow.__CODEX_PLUS_FORCE_CHINESE_LOCALE__ = {};\nwindow.__CODEX_PLUS_FAST_STARTUP__ = {};\n{}",
+        "window.__CODEX_SESSION_DELETE_HELPER__ = {};\nwindow.__CODEX_PLUS_SPONSOR_IMAGES__ = {};\nwindow.__CODEX_PLUS_VERSION__ = {};\nwindow.__CODEX_PLUS_BUILD__ = {};\nwindow.__CODEX_PLUS_IMAGE_OVERLAY__ = {};\nwindow.__CODEX_PLUS_PLUGIN_MARKETPLACES__ = {};\nwindow.__CODEX_PLUS_PASTE_FIX__ = {};\nwindow.__CODEX_PLUS_FORCE_CHINESE_LOCALE__ = {};\nwindow.__CODEX_PLUS_FAST_STARTUP__ = {};\n{}\n{}",
         serde_json::to_string(&helper_url).expect("helper URL should serialize"),
         serde_json::to_string(&sponsor_images).expect("sponsor images should serialize"),
         serde_json::to_string(crate::version::VERSION).expect("version should serialize"),
@@ -46,6 +51,7 @@ pub fn injection_script_with_settings(helper_port: u16, settings: &BackendSettin
             .expect("force Chinese locale config should serialize"),
         serde_json::to_string(&fast_startup).expect("fast startup config should serialize"),
         renderer_script(),
+        stepwise_script(),
     )
 }
 
@@ -64,6 +70,11 @@ fn local_plugin_marketplaces_from_home(home: &Path) -> Value {
     let candidates = [
         marketplace_dir.join("marketplace.json"),
         marketplace_dir.join("api_marketplace.json"),
+        home.join(".tmp")
+            .join("plugins-remote")
+            .join(".agents")
+            .join("plugins")
+            .join("marketplace.json"),
     ];
     let marketplaces = candidates
         .iter()
@@ -136,6 +147,12 @@ fn expand_local_plugin_marketplace(
         plugin_object
             .entry("id".to_string())
             .or_insert_with(|| Value::String(format!("{plugin_name}@{marketplace_name}")));
+        plugin_object
+            .entry("marketplaceName".to_string())
+            .or_insert_with(|| Value::String(marketplace_name.clone()));
+        plugin_object
+            .entry("marketplacePath".to_string())
+            .or_insert_with(|| Value::String(marketplace_name.clone()));
         plugin_object
             .entry("keywords".to_string())
             .or_insert_with(|| Value::Array(Vec::new()));
@@ -231,6 +248,7 @@ pub fn image_overlay_config(helper_port: u16, settings: &BackendSettings) -> Val
     json!({
         "enabled": enabled && !data_url.is_empty(),
         "opacity": f64::from(settings.codex_app_image_overlay_opacity.clamp(1, 100)) / 100.0,
+        "fitMode": settings.codex_app_image_overlay_fit_mode.as_str(),
         "dataUrl": data_url,
         "imageUrl": if enabled {
             format!("http://127.0.0.1:{helper_port}/overlay/image")
@@ -286,6 +304,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn image_overlay_config_includes_fit_mode() {
+        let settings = BackendSettings {
+            codex_app_image_overlay_fit_mode: "fill".to_string(),
+            ..BackendSettings::default()
+        };
+        let config = image_overlay_config(57321, &settings);
+
+        assert_eq!(config["fitMode"].as_str(), Some("fill"));
+    }
+
+    #[test]
     fn local_plugin_marketplaces_includes_api_marketplace_snapshot() {
         let temp = tempfile::tempdir().unwrap();
         let home = temp.path();
@@ -299,8 +328,20 @@ mod tests {
             .join("plugins")
             .join("plugins")
             .join("build-web-apps");
+        let remote_marketplace_dir = home
+            .join(".tmp")
+            .join("plugins-remote")
+            .join(".agents")
+            .join("plugins");
+        let remote_plugin_dir = home
+            .join(".tmp")
+            .join("plugins-remote")
+            .join("plugins")
+            .join("product-design");
         std::fs::create_dir_all(&marketplace_dir).unwrap();
+        std::fs::create_dir_all(&remote_marketplace_dir).unwrap();
         std::fs::create_dir_all(api_plugin_dir.join(".codex-plugin")).unwrap();
+        std::fs::create_dir_all(remote_plugin_dir.join(".codex-plugin")).unwrap();
         std::fs::write(
             marketplace_dir.join("marketplace.json"),
             r#"{"name":"openai-curated","plugins":[{"name":"gmail"}]}"#,
@@ -312,20 +353,43 @@ mod tests {
         )
         .unwrap();
         std::fs::write(
+            remote_marketplace_dir.join("marketplace.json"),
+            r#"{"name":"openai-curated-remote","plugins":[{"name":"product-design"}]}"#,
+        )
+        .unwrap();
+        std::fs::write(
             api_plugin_dir.join(".codex-plugin").join("plugin.json"),
             r#"{"interface":{"displayName":"Build Web Apps"}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            remote_plugin_dir.join(".codex-plugin").join("plugin.json"),
+            r#"{"interface":{"displayName":"Product Design"}}"#,
         )
         .unwrap();
 
         let marketplaces = local_plugin_marketplaces_from_home(home);
         let array = marketplaces.as_array().unwrap();
 
-        assert_eq!(array.len(), 2);
+        assert_eq!(array.len(), 3);
         assert_eq!(array[0]["name"].as_str(), Some("openai-curated"));
         assert_eq!(array[1]["name"].as_str(), Some("openai-api-curated"));
+        assert_eq!(array[2]["name"].as_str(), Some("openai-curated-remote"));
         assert_eq!(
             array[1]["plugins"][0]["interface"]["displayName"].as_str(),
             Some("Build Web Apps")
+        );
+        assert_eq!(
+            array[2]["plugins"][0]["interface"]["displayName"].as_str(),
+            Some("Product Design")
+        );
+        assert_eq!(
+            array[2]["plugins"][0]["marketplaceName"].as_str(),
+            Some("openai-curated-remote")
+        );
+        assert_eq!(
+            array[2]["plugins"][0]["marketplacePath"].as_str(),
+            Some("openai-curated-remote")
         );
     }
 }

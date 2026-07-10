@@ -37,12 +37,12 @@ The Windows installer creates desktop and Start Menu shortcuts. The macOS DMG in
 
 <p align="center">
   <a href="https://jojocode.com/">
-    <img src="docs/images/sponsor-jojocode.svg" alt="JOJO Code" width="180">
+    <img src="docs/images/sponsor-jojocode.png" alt="JOJO Code" width="180">
   </a>
 </p>
 <p align="center">
   <a href="https://jojocode.com/"><strong>JOJO Code | Official Codex++ Relay</strong></a><br>
-  The official Codex++ relay service, focused on stable access and cost-effective pricing. JOJO Code supports GPT-5.5, GPT-5.4, Claude Opus 4.8, Claude Opus 4.7, gpt-image-2, and more for daily development, team collaboration, and long-running project workflows.
+  The official Codex++ relay service, focused on stable access and cost-effective pricing. JOJO Code supports the full GPT-5.6 family, Fable 5, Sonnet 5, GPT-5.5, GPT-5.4, Claude Opus 4.8, Claude Opus 4.7, gpt-image-2, and more for daily development, team collaboration, and long-running project workflows.
 </p>
 
 <p align="center">
@@ -56,10 +56,10 @@ The Windows installer creates desktop and Start Menu shortcuts. The macOS DMG in
   <tr>
     <td align="center">
       <a href="https://jojocode.com/">
-        <img src="docs/images/sponsor-jojocode.svg" alt="JOJO Code" width="150">
+        <img src="docs/images/sponsor-jojocode.png" alt="JOJO Code" width="150">
       </a>
     </td>
-    <td><a href="https://jojocode.com/"><strong>JOJO Code | Official Codex++ Relay</strong></a><br>Thanks to JOJO Code for sponsoring this project. JOJO Code is the official Codex++ relay service with cost-effective pricing and stable, easy-to-configure Codex API access. It supports GPT-5.5, GPT-5.4, Claude Opus 4.8, Claude Opus 4.7, gpt-image-2, and more for daily development, quick setup, team collaboration, and continuous use.</td>
+    <td><a href="https://jojocode.com/"><strong>JOJO Code | Official Codex++ Relay</strong></a><br>Thanks to JOJO Code for sponsoring this project. JOJO Code is the official Codex++ relay service with cost-effective pricing and stable, easy-to-configure Codex API access. It supports the full GPT-5.6 family, Fable 5, Sonnet 5, GPT-5.5, GPT-5.4, Claude Opus 4.8, Claude Opus 4.7, gpt-image-2, and more for daily development, quick setup, team collaboration, and continuous use.</td>
   </tr>
   <tr>
     <td align="center">
@@ -68,14 +68,6 @@ The Windows installer creates desktop and Start Menu shortcuts. The macOS DMG in
       </a>
     </td>
     <td><a href="https://aigocode.com/invite/CodexPlusPlus"><strong>AIGoCode</strong></a><br>Thanks to AIGoCode for sponsoring this project! AIGoCode is an all-in-one platform integrating the latest Claude Code, Codex, and Gemini models, providing stable, efficient, and cost-effective AI programming services. It offers flexible subscription plans, direct access in China, no extra network setup, and fast responses. AIGoCode provides a special benefit for CodexPlusPlus users: users who <a href="https://aigocode.com/invite/CodexPlusPlus">register through this link</a> can receive an extra 10% bonus credit on their first recharge.</td>
-  </tr>
-  <tr>
-    <td align="center">
-      <a href="https://www.packyapi.com/">
-        <img src="docs/images/sponsor-packycode.png" alt="PackyCode" width="150">
-      </a>
-    </td>
-    <td><a href="https://www.packyapi.com/"><strong>PackyCode</strong></a><br>Thanks to PackyCode for sponsoring this project! PackyCode is a stable and efficient API relay service provider, offering relay services for Claude Code, Codex, Gemini, and more. PackyCode provides a special discount for users of this software: register through this link and enter the "CodexPlusPlus" coupon code when recharging to get 10% off your first recharge.</td>
   </tr>
   <tr>
     <td align="center">
@@ -125,6 +117,22 @@ The Windows installer creates desktop and Start Menu shortcuts. The macOS DMG in
     </td>
     <td><a href="https://sui-xiang.com/"><strong>Sui Xiang AI Gateway</strong></a><br>Thanks to Sui Xiang AI Gateway for sponsoring this project! Sui Xiang AI Gateway is a reliable and efficient API relay service provider for Claude, Codex, Gemini, and more. It focuses on privacy, transparent service, fast support, no data resale, and no model dilution. New accounts can receive 0.5 CNY in daily check-in test credit, with 1:1 recharge credit, no subscription, and pay-as-you-go billing.</td>
   </tr>
+  <tr>
+    <td align="center">
+      <a href="https://www.byteplus.com/en/product/modelark?utm_campaign=hw&amp;utm_content=CodexPlusPlus&amp;utm_medium=devrel_tool_web&amp;utm_source=OWO&amp;utm_term=CodexPlusPlus">
+        <img src="docs/images/sponsor-byteplus.png" alt="BytePlus" width="150">
+      </a>
+    </td>
+    <td><a href="https://www.byteplus.com/en/product/modelark?utm_campaign=hw&amp;utm_content=CodexPlusPlus&amp;utm_medium=devrel_tool_web&amp;utm_source=OWO&amp;utm_term=CodexPlusPlus"><strong>BytePlus ModelArk | Dola Seed</strong></a><br>Thanks to Dola Seed for sponsoring this project! Dola Seed 2.0 is a full-modal general large model independently developed by ByteDance for the global market. Built on a unified multimodal architecture, it supports joint understanding and generation of text, images, audio, and video. It natively enables agent collaboration, strong reasoning, long-task execution, tool integration, and coding capabilities, and is readily accessible through the ModelArk platform. Register via <a href="https://www.byteplus.com/en/product/modelark?utm_campaign=hw&amp;utm_content=CodexPlusPlus&amp;utm_medium=devrel_tool_web&amp;utm_source=OWO&amp;utm_term=CodexPlusPlus">this link</a> to get 500,000 tokens of free inference quota per model. <a href="https://dis.chatdesks.cn/chatdesk/hsyqCodexPlusPlus.html">Mainland China developers can click here</a>.</td>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="https://smallice.xyz/register?aff=FSNMGR2THBLN">
+        <img src="docs/images/sponsor-smallice.png" alt="Smallice" width="150">
+      </a>
+    </td>
+    <td><a href="https://smallice.xyz/register?aff=FSNMGR2THBLN"><strong>Smallice | AI Relay</strong></a><br>Thanks to Smallice for sponsoring this project! Smallice is one key to all the language models worth calling: a unified endpoint that acts as a quiet foundation layer beneath your applications. Whether you call Claude, GPT, Gemini, or DeepSeek, the request shape stays consistent. <a href="https://smallice.xyz/register?aff=FSNMGR2THBLN">Register through this link</a> to get started.</td>
+  </tr>
 </table>
 
 
@@ -134,7 +142,7 @@ The Windows installer creates desktop and Start Menu shortcuts. The macOS DMG in
 - Tauri + React manager with dark/light theme support.
 - External CDP injection. No `app.asar` patching and no DLL writes into the Codex installation.
 - Relay injection mode with multiple relay profiles, `CodexPlusPlus` provider configuration, and a one-click switch back to official ChatGPT login mode.
-- Traditional enhancement mode with plugin marketplace unlock, forced plugin install, session delete, Markdown export, project move, and more.
+- Traditional enhancement mode with plugin marketplace unlock, session delete, Markdown export, project move, and more.
 - Paste fix: when pasting from Word or other rich-text sources into the Codex composer, only keep the plain text so Codex does not treat the clipboard content as an image or file attachment. Off by default; requires a Codex relaunch to take effect.
   - **Usage note**: after toggling in the manager, click the "保存增强设置" / "Save enhancement settings" button to persist, then restart Codex++ for the change to take effect.
 - Independent user script management with startup injection.
@@ -191,7 +199,7 @@ To return to the official login mode, use the clear API mode button in the Relay
 
 Enhancements are controlled in the manager. Enhancement injection is enabled by default. When disabled, Codex++ will not inject its menu or scripts.
 
-When relay injection mode is active, plugin marketplace unlock and forced plugin install are unnecessary, and the UI will say so. Other enhancements, including session delete, export, move, paste fix, recommendations, and user scripts, can still be used.
+When relay injection mode is active, plugin marketplace unlock is unnecessary, and the UI will say so. Other enhancements, including session delete, export, move, paste fix, recommendations, and user scripts, can still be used.
 
 ## Recommendations
 
