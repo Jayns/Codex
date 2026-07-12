@@ -118,7 +118,7 @@ pub fn show_portable_config_dialog(
         };
         RegisterClassExW(&wc);
 
-        let title = wide_null("Codex Launcher");
+        let title = wide_null("ChatGPT Launcher");
         let mut state = Box::new(DialogState {
             edit_base_url: HWND::default(),
             edit_api_key: HWND::default(),
@@ -203,7 +203,7 @@ unsafe fn create_controls(parent: HWND, instance: HMODULE, state: &mut DialogSta
 
         // Header: a single descriptive line, then a separator hairline.
         state.subtitle = make_static(
-            "填写 API 信息，保存后自动启动 Codex",
+            "填写 API 信息，保存后自动启动 ChatGPT",
             PAD_X,
             HEADER_TOP,
             content_w,
@@ -300,7 +300,7 @@ unsafe fn create_controls(parent: HWND, instance: HMODULE, state: &mut DialogSta
         state.edit_provider = make_edit(ID_EDIT_PROVIDER, y, FIELD_WIDTH, &state.base.provider_name, false);
         y += ROW_PITCH;
 
-        make_label("Codex App 路径", y);
+        make_label("ChatGPT App 路径", y);
         state.edit_app_dir = make_edit(
             ID_EDIT_APP_DIR,
             y,
@@ -339,7 +339,7 @@ unsafe fn create_controls(parent: HWND, instance: HMODULE, state: &mut DialogSta
         let save_x = field_right - save_width;
         let cancel_x = save_x - button_gap - cancel_width;
         make_button(ID_BTN_CANCEL, cancel_x, footer_y, cancel_width, BUTTON_HEIGHT, "退出", false);
-        make_button(ID_BTN_SAVE, save_x, footer_y, save_width, BUTTON_HEIGHT, "保存并启动 Codex", true);
+        make_button(ID_BTN_SAVE, save_x, footer_y, save_width, BUTTON_HEIGHT, "保存并启动 ChatGPT", true);
     }
 }
 
@@ -540,7 +540,7 @@ fn wide_null(value: &str) -> Vec<u16> {
 /// `windows_subsystem = "windows"` (no console), so a startup failure written
 /// to stderr is invisible; this is the only way the user learns what failed.
 pub fn show_portable_error_dialog(message: &str) {
-    let title = wide_null("Codex Launcher");
+    let title = wide_null("ChatGPT Launcher");
     let text = wide_null(message);
     unsafe {
         MessageBoxW(

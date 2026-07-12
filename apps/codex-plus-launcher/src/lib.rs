@@ -1,5 +1,5 @@
 //! Shared launcher plumbing reused by both the installed launcher binary
-//! (`codex-plus-plus`) and the portable launcher binary (`codex-plus-portable`).
+//! (`codex-plus-plus`) and the portable launcher binary (`chatgpt-launcher`).
 //! Keeping this in one place avoids maintaining two copies of the CDP
 //! bridge/data-service wiring.
 

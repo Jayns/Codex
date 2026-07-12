@@ -4,13 +4,13 @@ set -euo pipefail
 # Assembles a self-contained macOS portable distribution:
 #
 #   <OutputDir>/
-#     Codex Portable.app/   double-click to run; config dialog on first launch
+#     ChatGPT Launcher.app/   double-click to run; config dialog on first launch
 #
 # Unlike the DMG installer (package-dmg.sh), this does not register the app
 # anywhere; the .app (and the config.ini created next to it on first run) can
 # be moved to another machine and run as-is. Unlike the Windows portable
 # build (package-portable.ps1), macOS never bundles its own copy of Codex
-# App: the "Codex App 路径" defaults to whatever Codex.app is already
+# App: the "ChatGPT App 路径" defaults to whatever Codex.app is already
 # installed under /Applications or ~/Applications (see
 # codex_plus_core::app_paths::find_macos_codex_app_default).
 #
@@ -47,10 +47,10 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-APP_NAME="Codex Portable"
+APP_NAME="ChatGPT Launcher"
 EXECUTABLE_NAME="codex"
 BUNDLE_ID="com.bigpizzav3.codexplusplus.portable"
-BINARY_PATH="$ROOT/target/release/codex"
+BINARY_PATH="$ROOT/target/release/chatgpt-launcher"
 # Same Codex App icon used for the Windows portable launcher's taskbar icon
 # (apps/codex-plus-launcher/src/portable_main.rs, CODEX_APP_ICON), not the
 # codex-plus-manager "C++" logo, so both platforms' portable launchers show
@@ -58,12 +58,12 @@ BINARY_PATH="$ROOT/target/release/codex"
 ICON_SOURCE_ICO="$ROOT/apps/codex-plus-launcher/assets/codex-app-icon.ico"
 
 if [ "$BUILD" -eq 1 ]; then
-  (cd "$ROOT" && cargo build --release -p codex-plus-launcher --bin codex)
+  (cd "$ROOT" && cargo build --release -p codex-plus-launcher --bin chatgpt-launcher)
 fi
 
 if [ ! -x "$BINARY_PATH" ]; then
   echo "error: built binary not found at $BINARY_PATH." >&2
-  echo "Pass --build, or build it manually first: cargo build --release -p codex-plus-launcher --bin codex" >&2
+  echo "Pass --build, or build it manually first: cargo build --release -p codex-plus-launcher --bin chatgpt-launcher" >&2
   exit 1
 fi
 

@@ -76,7 +76,7 @@ async fn run() -> Result<()> {
     let app_dir = if config.codex_app_dir.trim().is_empty() {
         platform_default_app_dir().ok_or_else(|| {
             anyhow::anyhow!(
-                "未找到已安装的 Codex App，请运行 `codex --config` 手动选择 Codex.app 的路径"
+                "未找到已安装的 ChatGPT App，请运行 `chatgpt-launcher --config` 手动选择安装路径"
             )
         })?
     } else {
@@ -127,7 +127,19 @@ async fn run() -> Result<()> {
 fn platform_default_app_dir() -> Option<std::path::PathBuf> {
     #[cfg(windows)]
     {
-        Some(codex_plus_core::portable::default_portable_app_dir())
+        // Prefer an already-installed official ChatGPT/Codex app so the
+        // portable launcher reuses it instead of requiring its own bundled
+        // copy; fall back to the bundled `codex_app` folder next to the exe
+        // (if it actually exists), and only leave this empty when neither is
+        // found, so the dialog prompts the user to pick a path.
+        if let Some(app_dir) = codex_plus_core::app_paths::resolve_codex_app_dir(None) {
+            return Some(app_dir);
+        }
+        let bundled = codex_plus_core::portable::default_portable_app_dir();
+        if codex_plus_core::app_paths::build_codex_executable(&bundled).exists() {
+            return Some(bundled);
+        }
+        None
     }
     #[cfg(target_os = "macos")]
     {
@@ -135,14 +147,15 @@ fn platform_default_app_dir() -> Option<std::path::PathBuf> {
     }
 }
 
-/// Creates a "Codex" desktop shortcut to this launcher (with the original Codex
-/// App icon), unless one already exists. Best-effort: failures are ignored.
+/// Creates a "ChatGPT Launcher" desktop shortcut to this launcher (with the
+/// original Codex App icon), unless one already exists. Best-effort: failures
+/// are ignored.
 #[cfg(windows)]
 fn create_desktop_shortcut(app_dir: &std::path::Path) -> anyhow::Result<()> {
     let Some(desktop) = codex_plus_core::windows_desktop_dir() else {
         return Ok(());
     };
-    let shortcut_path = desktop.join("Codex.lnk");
+    let shortcut_path = desktop.join("ChatGPT Launcher.lnk");
     if shortcut_path.exists() {
         return Ok(());
     }
@@ -160,7 +173,7 @@ fn create_desktop_shortcut(app_dir: &std::path::Path) -> anyhow::Result<()> {
         target: exe.clone(),
         arguments: String::new(),
         working_directory,
-        description: "Codex".to_string(),
+        description: "ChatGPT Launcher".to_string(),
         icon,
         show_minimized: false,
     })

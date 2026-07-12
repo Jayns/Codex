@@ -1,10 +1,10 @@
 # 便携启动器 — macOS 移植说明
 
-Windows / macOS 便携启动器（`codex` bin）都已跑通。本文档记录 macOS 端的实现现状，供后续维护参考。
+Windows / macOS 便携启动器（`chatgpt-launcher` bin）都已跑通。本文档记录 macOS 端的实现现状，供后续维护参考。
 
 ## 现状
 
-- `codex` bin = `apps/codex-plus-launcher/src/portable_main.rs`，Windows / macOS 共用。
+- `chatgpt-launcher` bin = `apps/codex-plus-launcher/src/portable_main.rs`，Windows / macOS 共用。
 - 配置读写 `crates/codex-plus-core/src/portable.rs` —— 跨平台，无需改动。
 - 配置弹窗按平台分模块：
   - `crates/codex-plus-core/src/portable_dialog/win32.rs` —— Windows 实现（Win32 原生控件）。
@@ -12,8 +12,8 @@ Windows / macOS 便携启动器（`codex` bin）都已跑通。本文档记录 m
   - `crates/codex-plus-core/src/portable_dialog/mod.rs` —— 按平台分发。
 - 启动 / CDP 注入 / relay 配置写入 —— `codex-plus-core` 已支持 macOS（`launcher.rs` 里有 `.app` / `open` 启动路径）。
 - Windows 专属的任务栏图标、桌面快捷方式代码在 `portable_main.rs` 里都是 `#[cfg(windows)]`，macOS 不受影响。
-- macOS 打包脚本 `scripts/installer/macos/package-portable.sh` 把 `codex` 包成
-  `Codex Portable.app`（`LSUIElement`，无 Dock 图标），双击直接运行，不会像裸
+- macOS 打包脚本 `scripts/installer/macos/package-portable.sh` 把 `chatgpt-launcher` 包成
+  `ChatGPT Launcher.app`（`LSUIElement`，无 Dock 图标），双击直接运行，不会像裸
   可执行文件那样弹出 Terminal 窗口（详见下文）。
 
 ## macOS 配置弹窗（`portable_dialog/cocoa.rs`）
@@ -50,12 +50,12 @@ objc2-foundation = "0.3"
 
 ```bash
 # 需要 Xcode Command Line Tools: xcode-select --install
-cargo build --release -p codex-plus-launcher --bin codex
-./target/release/codex          # 首次运行弹配置窗口
-./target/release/codex --config # 强制打开配置窗口
+cargo build --release -p codex-plus-launcher --bin chatgpt-launcher
+./target/release/chatgpt-launcher          # 首次运行弹配置窗口
+./target/release/chatgpt-launcher --config # 强制打开配置窗口
 ```
 
-直接跑裸的 `target/release/codex` 只适合本地调试：macOS 对没有 `.app` 包装的
+直接跑裸的 `target/release/chatgpt-launcher` 只适合本地调试：macOS 对没有 `.app` 包装的
 Unix 可执行文件，双击时 Finder 会自动开一个 Terminal 窗口来跑它（这不是 bug，
 是系统行为），而且这个终端窗口会一直挂着，因为便携启动器设计上要一直存活到
 Codex 退出为止（见下面「打包成 .app」）。
@@ -66,7 +66,7 @@ Codex 退出为止（见下面「打包成 .app」）。
 scripts/installer/macos/package-portable.sh dist/macos/portable --build
 ```
 
-会生成 `dist/macos/portable/Codex Portable.app`：
+会生成 `dist/macos/portable/ChatGPT Launcher.app`：
 
 - `Info.plist` 里 `LSUIElement = true`，没有 Dock 图标；双击直接运行，不会像裸
   可执行文件那样弹出 Terminal 窗口。
@@ -77,17 +77,17 @@ scripts/installer/macos/package-portable.sh dist/macos/portable --build
 - 打包后会做一次 ad-hoc 签名（`codesign --sign -`），避免刚构建出来的 bundle
   被 Gatekeeper 当成"已损坏"拒绝运行；不涉及需要 Apple 开发者证书的正式签名/公证。
 - 参数：`[OutputDir] [--build] [--version X.Y.Z]`；`--build` 会先跑
-  `cargo build --release -p codex-plus-launcher --bin codex`。
+  `cargo build --release -p codex-plus-launcher --bin chatgpt-launcher`。
 
 ### `config.ini` 的位置
 
 `portable.rs` 里的 `default_portable_config_path()` / `default_portable_app_dir()`
 现在会识别自己是否跑在 `.app` bundle 里：如果可执行文件路径形如
 `Foo.app/Contents/MacOS/codex`，会从 bundle 所在的目录（而不是
-`Contents/MacOS`）算起，这样 `config.ini` 落在 `Codex Portable.app` 旁边，
+`Contents/MacOS`）算起，这样 `config.ini` 落在 `ChatGPT Launcher.app` 旁边，
 便携文件夹还是"`.app` + `config.ini`"这种扁平结构，不会被埋进 bundle 内部。
-跑裸的 `target/release/codex`（未打包）时行为不变，`config.ini` 就在可执行文件
-旁边。
+跑裸的 `target/release/chatgpt-launcher`（未打包）时行为不变，`config.ini` 就在
+可执行文件旁边。
 
 ### Codex App 路径的默认值
 
@@ -98,17 +98,17 @@ macOS 便携包**不再随包携带一份 Codex.app**（不像 Windows 那样在
   `codex_plus_core::app_paths::find_macos_codex_app_default()`，会在
   `/Applications` 和 `~/Applications` 下查找 `Codex.app` /
   `OpenAI Codex.app` / `OpenAI.Codex.app`。
-- 配置窗口首次打开时会用这个默认值预填「Codex App 路径」；用户也可以用「浏览」
+- 配置窗口首次打开时会用这个默认值预填「ChatGPT App 路径」；用户也可以用「浏览」
   按钮手动指向别处的 `Codex.app`。
 - 如果 `codex_app_dir` 为空且自动查找也没找到（用户没装 Codex 或装在非常规位置），
-  启动时会直接报错并提示用 `codex --config` 打开配置窗口手动选择，而不是静默失败
-  或退回到一个不存在的本地路径。
+  启动时会直接报错并提示用 `chatgpt-launcher --config` 打开配置窗口手动选择，而不是
+  静默失败或退回到一个不存在的本地路径。
 
 macOS 便携包布局大致：
 
 ```
 dist/macos/portable/
-  Codex Portable.app/   # 打包脚本生成，双击运行
+  ChatGPT Launcher.app/   # 打包脚本生成，双击运行
   config.ini              # 首次运行后自动生成，和 .app 同级
 ```
 
@@ -116,7 +116,7 @@ dist/macos/portable/
 
 ## 待定 / 后续（第一版可跳过）
 
-- **Dock 图标**：Windows 版把 Codex 原版图标应用到任务栏窗口。`Codex Portable.app`
+- **Dock 图标**：Windows 版把 Codex 原版图标应用到任务栏窗口。`ChatGPT Launcher.app`
   设了 `LSUIElement`，本来就不显示 Dock 图标，暂不需要额外处理。
 - **桌面快捷方式**：Windows 版在桌面建 `.lnk`。macOS 对应物是把 `.app`
   拖进 Dock/`/Applications`，第一版先不自动做。

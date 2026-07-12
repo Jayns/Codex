@@ -1,8 +1,8 @@
 //! Native macOS (Cocoa/AppKit) configuration dialog for the portable
 //! launcher. Mirrors the behaviour of the Windows dialog (`win32.rs`): a
 //! modal window with five text fields (prefilled from `initial`), a "浏览"
-//! button next to the Codex App path field that opens an `NSOpenPanel`, and
-//! two buttons ("退出" / "保存并启动 Codex") that resolve the call.
+//! button next to the ChatGPT App path field that opens an `NSOpenPanel`, and
+//! two buttons ("退出" / "保存并启动 ChatGPT") that resolve the call.
 
 use std::cell::{Cell, OnceCell, RefCell};
 
@@ -183,7 +183,7 @@ impl ConfigDialogDelegate {
 
 /// Shows the configuration window and blocks until the user saves or closes it.
 ///
-/// Returns `Some(config)` when the user clicked "保存并启动 Codex", or `None`
+/// Returns `Some(config)` when the user clicked "保存并启动 ChatGPT", or `None`
 /// when the window was closed/cancelled (caller should not launch Codex).
 pub fn show_portable_config_dialog(
     initial: &PortableConfig,
@@ -202,7 +202,7 @@ pub fn show_portable_config_dialog(
         NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(CONTENT_WIDTH, CONTENT_HEIGHT)),
     );
 
-    let subtitle = NSTextField::labelWithString(ns_string!("填写 API 信息，保存后自动启动 Codex"), mtm);
+    let subtitle = NSTextField::labelWithString(ns_string!("填写 API 信息，保存后自动启动 ChatGPT"), mtm);
     subtitle.setFrame(NSRect::new(
         NSPoint::new(PAD_X, CONTENT_HEIGHT - 34.0),
         NSSize::new(CONTENT_WIDTH - PAD_X * 2.0, 20.0),
@@ -215,7 +215,7 @@ pub fn show_portable_config_dialog(
         ("API Key", 1, true, false),
         ("默认模型", 2, false, false),
         ("Provider 名称", 3, false, false),
-        ("Codex App 路径", 4, false, true),
+        ("ChatGPT App 路径", 4, false, true),
     ];
 
     for (label_text, row, is_password, has_browse) in rows {
@@ -306,7 +306,7 @@ pub fn show_portable_config_dialog(
 
     let save_button = unsafe {
         NSButton::buttonWithTitle_target_action(
-            ns_string!("保存并启动 Codex"),
+            ns_string!("保存并启动 ChatGPT"),
             Some(target),
             Some(sel!(save:)),
             mtm,
@@ -330,7 +330,7 @@ pub fn show_portable_config_dialog(
     // SAFETY: Disable auto-release when closing windows created outside a
     // window controller (mirrors the equivalent objc2 AppKit example).
     unsafe { window.setReleasedWhenClosed(false) };
-    window.setTitle(ns_string!("Codex Launcher"));
+    window.setTitle(ns_string!("ChatGPT Launcher"));
     window.setContentView(Some(&content_view));
     window.center();
     window.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));

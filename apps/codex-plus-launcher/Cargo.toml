@@ -10,7 +10,7 @@ name = "codex-plus-plus"
 path = "src/main.rs"
 
 [[bin]]
-name = "codex"
+name = "chatgpt-launcher"
 path = "src/portable_main.rs"
 
 [dependencies]
