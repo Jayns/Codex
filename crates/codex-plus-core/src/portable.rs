@@ -193,12 +193,40 @@ fn portable_root_dir() -> PathBuf {
         return PathBuf::from(".");
     };
     #[cfg(target_os = "macos")]
+    if is_macos_translocated(&exe) {
+        // Gatekeeper App Translocation: a quarantined .app opened via the GUI
+        // "仍要打开" flow runs from a randomized *read-only* mount, so writing
+        // config.ini next to the bundle fails with "Read-only file system".
+        // Fall back to a stable per-user location instead.
+        return macos_user_config_root();
+    }
+    #[cfg(target_os = "macos")]
     if let Some(root) = macos_app_bundle_root(&exe) {
         return root;
     }
     exe.parent()
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."))
+}
+
+/// True when the executable runs from a Gatekeeper App Translocation mount
+/// (`/private/var/folders/.../AppTranslocation/<uuid>/d/Foo.app/...`).
+#[cfg(target_os = "macos")]
+fn is_macos_translocated(exe: &Path) -> bool {
+    exe.components()
+        .any(|component| component.as_os_str() == "AppTranslocation")
+}
+
+/// Writable per-user config root used when the bundle location is read-only:
+/// `~/Library/Application Support/ChatGPT Launcher`.
+#[cfg(target_os = "macos")]
+fn macos_user_config_root() -> PathBuf {
+    directories::BaseDirs::new()
+        .map(|dirs| dirs.home_dir().to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("Library")
+        .join("Application Support")
+        .join("ChatGPT Launcher")
 }
 
 /// If `exe` is `Foo.app/Contents/MacOS/exe`, returns the directory containing
@@ -245,6 +273,17 @@ mod macos_bundle_tests {
     fn returns_none_when_app_extension_is_missing() {
         let exe = Path::new("/Applications/NotAnApp/Contents/MacOS/codex");
         assert_eq!(macos_app_bundle_root(exe), None);
+    }
+
+    #[test]
+    fn detects_app_translocation_mount() {
+        let exe = Path::new(
+            "/private/var/folders/ab/xyz/T/AppTranslocation/1B2C-3D4E/d/ChatGPT Launcher.app/Contents/MacOS/chatgpt-launcher",
+        );
+        assert!(is_macos_translocated(exe));
+        assert!(!is_macos_translocated(Path::new(
+            "/Applications/ChatGPT Launcher.app/Contents/MacOS/chatgpt-launcher"
+        )));
     }
 }
 
