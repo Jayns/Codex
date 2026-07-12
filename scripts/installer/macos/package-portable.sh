@@ -143,5 +143,46 @@ PLIST
 codesign --force --sign - "$APP_DIR/Contents/MacOS/$EXECUTABLE_NAME"
 codesign --force --sign - "$APP_DIR"
 
+# End-user README shipped next to the .app. The bundle is only ad-hoc signed
+# (no Apple notarization), so recipients hit the Gatekeeper "无法验证" block on
+# first open; the README walks them through that and the first-run setup.
+cat > "$OUTPUT_PATH/使用说明.txt" <<README
+$APP_NAME 使用说明
+==============================
+
+本文件夹是完整的分发包，可整体拷贝到其他 Mac 上使用。
+
+一、准备工作
+1. 本工具需要官方 ChatGPT 桌面应用。如果尚未安装，请先打开同目录下的
+   ChatGPT.dmg 安装（把 ChatGPT 拖入"应用程序"文件夹）。
+2. 如果 ChatGPT 应用正在运行，请先完全退出（按 Cmd+Q）。
+
+二、首次打开（解除 macOS 安全提示）
+应用未经 Apple 公证，首次打开会提示"Apple 无法验证…"，任选一种方式解除：
+
+  方式一（推荐，一条命令）：
+    打开"终端"，输入以下内容后回车（把 app 图标拖进终端窗口可自动填入路径）：
+      xattr -dr com.apple.quarantine "$APP_NAME.app 的路径"
+
+  方式二（纯图形界面）：
+    1. 双击 app，弹窗中点"完成"（不要点"移到废纸篓"）；
+    2. 打开 系统设置 → 隐私与安全性，拉到最底部；
+    3. 在"已阻止 $APP_NAME"提示处点"仍要打开"，再确认一次即可。
+
+三、开始使用
+1. 双击 $APP_NAME；
+2. 首次运行会弹出配置窗口，填入 API 网址、API Key、默认模型等信息；
+3. 点击"保存并启动 Codex"；
+4. 启动时间较长，请耐心等待，ChatGPT 应用会自动打开。
+
+四、其他说明
+- 配置保存在 app 旁边的 config.ini，配置完成后再次双击即可直接启动，
+  不再弹出配置窗口。
+- 如需修改配置，在终端运行：
+    "$APP_NAME.app/Contents/MacOS/$EXECUTABLE_NAME" --config
+- $APP_NAME 会在后台驻留（为增强功能提供支持），ChatGPT 退出后它会自动退出。
+README
+
 echo "Portable app assembled at $APP_DIR"
+echo "README written to $OUTPUT_PATH/使用说明.txt"
 echo "First launch shows the config dialog and creates config.ini next to \"$APP_NAME.app\"."
