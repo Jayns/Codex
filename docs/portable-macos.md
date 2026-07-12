@@ -81,13 +81,13 @@ scripts/installer/macos/package-portable.sh dist/macos/portable --build
 
 ### `config.ini` 的位置
 
-`portable.rs` 里的 `default_portable_config_path()` / `default_portable_app_dir()`
-现在会识别自己是否跑在 `.app` bundle 里：如果可执行文件路径形如
-`Foo.app/Contents/MacOS/codex`，会从 bundle 所在的目录（而不是
-`Contents/MacOS`）算起，这样 `config.ini` 落在 `ChatGPT Launcher.app` 旁边，
-便携文件夹还是"`.app` + `config.ini`"这种扁平结构，不会被埋进 bundle 内部。
-跑裸的 `target/release/chatgpt-launcher`（未打包）时行为不变，`config.ini` 就在
-可执行文件旁边。
+macOS 上 `config.ini` **统一保存在**
+`~/Library/Application Support/ChatGPT Launcher/config.ini`
+（`portable.rs` 里 `portable_root_dir()` 的 macOS 分支），不再随 `.app` 的
+位置变化。原因：通过微信/网盘等网络方式分发的 `.app` 带隔离标记，Gatekeeper
+的 App Translocation 会把它挪到一个**只读**随机挂载点运行，写在 bundle 旁边
+必然失败（os error 30），统一到用户目录在所有启动场景下都可写。
+Windows 不受影响，仍是 exe 旁边的经典便携布局。
 
 ### Codex App 路径的默认值
 
@@ -109,8 +109,11 @@ macOS 便携包布局大致：
 ```
 dist/macos/portable/
   ChatGPT Launcher.app/   # 打包脚本生成，双击运行
-  config.ini              # 首次运行后自动生成，和 .app 同级
+  使用说明.txt             # 打包脚本生成，随包分发
 ```
+
+（`config.ini` 在首次保存配置后生成于
+`~/Library/Application Support/ChatGPT Launcher/`，不在分发文件夹里。）
 
 （不需要 `codex_app/` 子目录；`launcher.rs` 已能用 `open` 启动已安装的 `.app`。）
 

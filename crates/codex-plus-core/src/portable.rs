@@ -170,15 +170,13 @@ fn parse_ini_section(contents: &str, section: &str) -> HashMap<String, String> {
     values
 }
 
-/// Default `config.ini` path: next to the running executable (portable layout).
+/// Default `config.ini` path.
 ///
-/// On macOS the launcher is packaged as `Codex++ Portable.app` so double-
-/// clicking it doesn't spawn a Terminal window (see
-/// `scripts/installer/macos/package-portable.sh`), which means the running
-/// executable actually lives at `Codex++ Portable.app/Contents/MacOS/codex`.
-/// Anchoring `config.ini` there would bury it inside the bundle, so this
-/// resolves to the directory *containing* the `.app` instead, keeping the
-/// portable folder a flat `Codex++ Portable.app` + `config.ini` layout.
+/// Windows keeps the classic portable layout: `config.ini` next to the exe.
+/// macOS always uses `~/Library/Application Support/ChatGPT Launcher/` — a
+/// single stable location that stays writable in every launch scenario
+/// (Gatekeeper App Translocation runs the quarantined .app from a read-only
+/// mount, where writing next to the bundle fails with os error 30).
 pub fn default_portable_config_path() -> PathBuf {
     portable_root_dir().join("config.ini")
 }
@@ -189,35 +187,22 @@ pub fn default_portable_app_dir() -> PathBuf {
 }
 
 fn portable_root_dir() -> PathBuf {
-    let Some(exe) = std::env::current_exe().ok() else {
-        return PathBuf::from(".");
-    };
     #[cfg(target_os = "macos")]
-    if is_macos_translocated(&exe) {
-        // Gatekeeper App Translocation: a quarantined .app opened via the GUI
-        // "仍要打开" flow runs from a randomized *read-only* mount, so writing
-        // config.ini next to the bundle fails with "Read-only file system".
-        // Fall back to a stable per-user location instead.
-        return macos_user_config_root();
+    {
+        macos_user_config_root()
     }
-    #[cfg(target_os = "macos")]
-    if let Some(root) = macos_app_bundle_root(&exe) {
-        return root;
+    #[cfg(not(target_os = "macos"))]
+    {
+        let Some(exe) = std::env::current_exe().ok() else {
+            return PathBuf::from(".");
+        };
+        exe.parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."))
     }
-    exe.parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from("."))
 }
 
-/// True when the executable runs from a Gatekeeper App Translocation mount
-/// (`/private/var/folders/.../AppTranslocation/<uuid>/d/Foo.app/...`).
-#[cfg(target_os = "macos")]
-fn is_macos_translocated(exe: &Path) -> bool {
-    exe.components()
-        .any(|component| component.as_os_str() == "AppTranslocation")
-}
-
-/// Writable per-user config root used when the bundle location is read-only:
+/// The single per-user config root on macOS:
 /// `~/Library/Application Support/ChatGPT Launcher`.
 #[cfg(target_os = "macos")]
 fn macos_user_config_root() -> PathBuf {
@@ -229,61 +214,15 @@ fn macos_user_config_root() -> PathBuf {
         .join("ChatGPT Launcher")
 }
 
-/// If `exe` is `Foo.app/Contents/MacOS/exe`, returns the directory containing
-/// `Foo.app`. Returns `None` for a loose (non-bundled) executable, e.g. when
-/// running `cargo run` / the unpackaged binary directly during development.
-#[cfg(target_os = "macos")]
-fn macos_app_bundle_root(exe: &Path) -> Option<PathBuf> {
-    let macos_dir = exe.parent()?;
-    if macos_dir.file_name()? != "MacOS" {
-        return None;
-    }
-    let contents_dir = macos_dir.parent()?;
-    if contents_dir.file_name()? != "Contents" {
-        return None;
-    }
-    let app_dir = contents_dir.parent()?;
-    if app_dir.extension()? != "app" {
-        return None;
-    }
-    app_dir.parent().map(Path::to_path_buf)
-}
-
 #[cfg(target_os = "macos")]
 #[cfg(test)]
-mod macos_bundle_tests {
+mod macos_config_root_tests {
     use super::*;
 
     #[test]
-    fn resolves_root_for_bundled_executable() {
-        let exe = Path::new("/Applications/Codex++ Portable.app/Contents/MacOS/codex");
-        assert_eq!(
-            macos_app_bundle_root(exe),
-            Some(PathBuf::from("/Applications"))
-        );
-    }
-
-    #[test]
-    fn returns_none_for_loose_executable() {
-        let exe = Path::new("/Users/me/dev/target/release/codex");
-        assert_eq!(macos_app_bundle_root(exe), None);
-    }
-
-    #[test]
-    fn returns_none_when_app_extension_is_missing() {
-        let exe = Path::new("/Applications/NotAnApp/Contents/MacOS/codex");
-        assert_eq!(macos_app_bundle_root(exe), None);
-    }
-
-    #[test]
-    fn detects_app_translocation_mount() {
-        let exe = Path::new(
-            "/private/var/folders/ab/xyz/T/AppTranslocation/1B2C-3D4E/d/ChatGPT Launcher.app/Contents/MacOS/chatgpt-launcher",
-        );
-        assert!(is_macos_translocated(exe));
-        assert!(!is_macos_translocated(Path::new(
-            "/Applications/ChatGPT Launcher.app/Contents/MacOS/chatgpt-launcher"
-        )));
+    fn config_path_lives_under_application_support() {
+        let path = default_portable_config_path();
+        assert!(path.ends_with("Library/Application Support/ChatGPT Launcher/config.ini"));
     }
 }
 
