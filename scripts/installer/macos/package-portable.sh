@@ -48,7 +48,7 @@ while [ $# -gt 0 ]; do
 done
 
 APP_NAME="ChatGPT Launcher"
-EXECUTABLE_NAME="codex"
+EXECUTABLE_NAME="chatgpt-launcher"
 BUNDLE_ID="com.bigpizzav3.codexplusplus.portable"
 BINARY_PATH="$ROOT/target/release/chatgpt-launcher"
 # Same Codex App icon used for the Windows portable launcher's taskbar icon
@@ -170,8 +170,10 @@ $APP_NAME 使用说明
 4. 启动时间较长，请耐心等待，ChatGPT 应用会自动打开。
 
 四、其他说明
-- 配置保存在 app 旁边的 config.ini，配置完成后再次双击即可直接启动，
-  不再弹出配置窗口。
+- 配置完成后，再次双击即可直接启动，不再弹出配置窗口。
+- 配置文件 config.ini 一般保存在 app 旁边；如果 app 是通过微信/网盘等
+  网络方式接收的，系统会以隔离模式运行它，此时配置自动保存在：
+    ~/Library/Application Support/ChatGPT Launcher/config.ini
 - 如需修改配置，在终端运行：
     "$APP_NAME.app/Contents/MacOS/$EXECUTABLE_NAME" --config
 - $APP_NAME 会在后台驻留（为增强功能提供支持），ChatGPT 退出后它会自动退出。
