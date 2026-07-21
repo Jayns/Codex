@@ -125,6 +125,12 @@ impl LaunchHooks for LauncherHooks {
         self.core.inject(debug_port, helper_port).await
     }
 
+    async fn start_bridge_watchdog(&self, debug_port: u16, helper_port: u16) -> anyhow::Result<()> {
+        self.core
+            .start_bridge_watchdog(debug_port, helper_port)
+            .await
+    }
+
     async fn start_computer_use_guard_watchdog(
         &self,
         settings: &codex_plus_core::settings::BackendSettings,
@@ -217,9 +223,15 @@ impl BridgeDataService for LauncherDataService {
         session: SessionRef,
         target_cwd: String,
     ) -> anyhow::Result<Value> {
-        let adapter = self.storage_adapter();
+        let db_paths = self.candidate_db_paths();
+        let backup_store = codex_plus_data::BackupStore::new(self.backup_dir.clone());
         tokio::task::spawn_blocking(move || {
-            adapter.move_codex_thread_workspace(&session, &target_cwd)
+            codex_plus_data::move_codex_thread_workspace_from_paths(
+                db_paths,
+                backup_store,
+                &session,
+                &target_cwd,
+            )
         })
         .await
         .map_err(|error| anyhow::anyhow!("move thread workspace task failed: {error}"))
@@ -329,23 +341,14 @@ impl BridgeRuntimeService for LauncherRuntimeService {
     }
 
     async fn open_manager(&self) -> anyhow::Result<Value> {
-        let manager_path = manager_exe_path();
-        #[cfg(windows)]
-        {
-            std::process::Command::new(&manager_path)
-                .creation_flags(codex_plus_core::windows_create_no_window())
-                .spawn()
-                .map_err(|error| anyhow::anyhow!("启动管理工具失败：{error}"))?;
-        }
-        #[cfg(not(windows))]
-        {
-            std::process::Command::new(&manager_path)
-                .spawn()
-                .map_err(|error| anyhow::anyhow!("启动管理工具失败：{error}"))?;
-        }
+        let target = codex_plus_core::install::spawn_companion(
+            codex_plus_core::install::MANAGER_BINARY,
+            std::iter::empty::<&str>(),
+        )
+        .map_err(|error| anyhow::anyhow!("启动管理工具失败：{error}"))?;
         Ok(json!({
             "status": "ok",
-            "path": manager_path.to_string_lossy()
+            "path": target
         }))
     }
 
@@ -512,10 +515,6 @@ pub fn open_url(url: &str) -> anyhow::Result<()> {
         let _ = url;
         anyhow::bail!("opening DevTools URL is not supported on this platform")
     }
-}
-
-pub fn manager_exe_path() -> PathBuf {
-    codex_plus_core::install::companion_binary_path(codex_plus_core::install::MANAGER_BINARY)
 }
 
 pub fn default_user_script_manager() -> UserScriptManager {

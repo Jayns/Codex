@@ -4,8 +4,6 @@ use anyhow::{Context, Result};
 use codex_plus_core::launcher::{LaunchHooks, LaunchOptions, launch_and_inject_with_hooks};
 use codex_plus_launcher::LauncherHooks;
 use serde_json::json;
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 
 #[tokio::main]
@@ -186,17 +184,12 @@ async fn notify_manager_when_update_available() -> anyhow::Result<bool> {
 }
 
 fn open_manager_with_update_prompt() -> anyhow::Result<()> {
-    let manager_path = codex_plus_launcher::manager_exe_path();
-    let mut command = std::process::Command::new(&manager_path);
-    command.arg("--show-update");
-    #[cfg(windows)]
-    {
-        command.creation_flags(codex_plus_core::windows_create_no_window());
-    }
-    command
-        .spawn()
-        .map(|_| ())
-        .map_err(|error| anyhow::anyhow!("启动管理工具失败：{error}"))
+    codex_plus_core::install::spawn_companion(
+        codex_plus_core::install::MANAGER_BINARY,
+        ["--show-update"],
+    )
+    .map(|_| ())
+    .map_err(|error| anyhow::anyhow!("启动管理工具失败：{error}"))
 }
 
 fn parse_launch_options<I, S>(args: I) -> LaunchOptions
@@ -274,9 +267,11 @@ mod tests {
     }
 
     #[test]
-    fn launcher_hooks_forward_computer_use_guard_methods() {
+    fn launcher_hooks_forward_runtime_watchdogs_and_computer_use_guard_methods() {
         let source = include_str!("lib.rs");
 
+        assert!(source.contains("async fn start_bridge_watchdog"));
+        assert!(source.contains(".start_bridge_watchdog(debug_port, helper_port)"));
         assert!(source.contains("async fn ensure_computer_use_config"));
         assert!(source.contains("self.core.ensure_computer_use_config(settings).await"));
         assert!(source.contains("async fn ensure_plugin_marketplace_config"));
@@ -284,16 +279,5 @@ mod tests {
         assert!(source.contains("async fn start_computer_use_guard_watchdog"));
         assert!(source.contains("self.core"));
         assert!(source.contains(".start_computer_use_guard_watchdog(settings)"));
-    }
-
-    #[test]
-    fn manager_update_prompt_uses_sidecar_manager_binary_name() {
-        let path = codex_plus_launcher::manager_exe_path();
-
-        assert!(
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.contains(codex_plus_core::install::MANAGER_BINARY))
-        );
     }
 }
