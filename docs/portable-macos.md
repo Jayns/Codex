@@ -120,6 +120,11 @@ Dream Skin 换肤（那是 manager App 的 `settings.json`/`BackendSettings` 里
 - 安装版（`codex-plus-plus` + `codex-plus-plus-manager` 走 DMG 安装）不受
   影响：`main.rs` 仍用 `LauncherHooks::default()`，"打开皮肤管理"没有
   `--skin-only`，照常打开完整 manager 界面。
+- `Codex++ 皮肤管理工具.app` 的 `Info.plist` 里额外写了
+  `LSEnvironment { CODEX_PLUS_SKIN_ONLY = 1 }`（`create_app` 的可选环境变量
+  参数，见 `package-portable.sh`），所以哪怕用户直接在 Finder 里双击这个
+  bundle（不经过 ChatGPT 菜单、不带 `--skin-only` 参数），也一样是 skin-only
+  界面——不依赖调用方是否传了 CLI 参数。
 
 ### `config.ini` 的位置
 

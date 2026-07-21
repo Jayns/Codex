@@ -129,6 +129,12 @@ create_app() {
   local bundle_id="$4"
   local icon_source="$5"
   local lsui_element="$6"
+  # Optional "KEY=VALUE" pairs baked into Info.plist's LSEnvironment, so the
+  # process gets them on every launch path (double-click, Spotlight, `open`,
+  # or a --args invocation) rather than only when the caller happens to pass
+  # a matching CLI flag.
+  shift 6
+  local env_pairs=("$@")
   local app_dir="$OUTPUT_PATH/$app_name.app"
   local icon_name="icon.icns"
 
@@ -148,6 +154,22 @@ create_app() {
     fi
     build_icns "$icon_png" "$app_dir/Contents/Resources/$icon_name"
     [ "$icon_png" != "$icon_source" ] && rm -f "$icon_png"
+  fi
+
+  local ls_environment=""
+  if [ "${#env_pairs[@]}" -gt 0 ]; then
+    ls_environment="  <key>LSEnvironment</key>
+  <dict>
+"
+    for pair in "${env_pairs[@]}"; do
+      local key="${pair%%=*}"
+      local value="${pair#*=}"
+      ls_environment+="    <key>$key</key>
+    <string>$value</string>
+"
+    done
+    ls_environment+="  </dict>
+"
   fi
 
   printf 'APPL????' > "$app_dir/Contents/PkgInfo"
@@ -182,7 +204,7 @@ create_app() {
   <true/>
   <key>LSUIElement</key>
   <$lsui_element/>
-</dict>
+$ls_environment</dict>
 </plist>
 PLIST
 
@@ -192,7 +214,11 @@ PLIST
 }
 
 create_app "$APP_NAME" "$EXECUTABLE_NAME" "$BINARY_PATH" "$BUNDLE_ID" "$ICON_SOURCE_ICO" "true"
-create_app "$MANAGER_APP_NAME" "$MANAGER_EXECUTABLE_NAME" "$MANAGER_BINARY_PATH" "$MANAGER_BUNDLE_ID" "$MANAGER_ICON_SOURCE_PNG" "false"
+# CODEX_PLUS_SKIN_ONLY baked into LSEnvironment so this bundle is always
+# restricted to 皮肤管理, however it's launched — double-clicked directly in
+# Finder (no CLI args reach it that way) as well as via spawn_companion's
+# --skin-only from the injected ChatGPT menu.
+create_app "$MANAGER_APP_NAME" "$MANAGER_EXECUTABLE_NAME" "$MANAGER_BINARY_PATH" "$MANAGER_BUNDLE_ID" "$MANAGER_ICON_SOURCE_PNG" "false" "CODEX_PLUS_SKIN_ONLY=1"
 
 APP_DIR="$OUTPUT_PATH/$APP_NAME.app"
 
