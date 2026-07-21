@@ -9,6 +9,11 @@ pub mod windows;
 
 pub const SILENT_NAME: &str = "Codex++";
 pub const MANAGER_NAME: &str = "Codex++ 管理工具";
+/// Bundle name used only by the portable distribution's skin-only companion
+/// (`scripts/installer/macos/package-portable.sh`), a separate .app from the
+/// full installed manager (`MANAGER_NAME`) so the two never get confused —
+/// `macos_companion_binary_from_exe` tries both sibling names.
+pub const MANAGER_PORTABLE_NAME: &str = "Codex++ 皮肤管理工具";
 pub const SILENT_BINARY: &str = "codex-plus-plus";
 pub const MANAGER_BINARY: &str = "codex-plus-plus-manager";
 pub const SILENT_BUNDLE_ID: &str = "com.bigpizzav3.codexplusplus";
@@ -353,17 +358,24 @@ fn macos_companion_binary_from_exe(exe: &Path, binary: &str) -> Option<PathBuf> 
                 "CodexPlusPlusManager",
             ));
         }
+        // Try the installed full manager's name first, then the portable
+        // distribution's skin-only companion name; only the one that's
+        // actually present as a sibling .app will exist.
+        for candidate_name in [MANAGER_NAME, MANAGER_PORTABLE_NAME] {
+            let candidate = applications_dir
+                .join(format!("{candidate_name}.app"))
+                .join("Contents")
+                .join("MacOS")
+                .join(MANAGER_BINARY);
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
         let macos = applications_dir
             .join(format!("{MANAGER_NAME}.app"))
             .join("Contents")
             .join("MacOS");
-        return Some(
-            macos
-                .join(MANAGER_BINARY)
-                .exists()
-                .then(|| macos.join(MANAGER_BINARY))
-                .unwrap_or_else(|| macos.join("CodexPlusPlusManager")),
-        );
+        return Some(macos.join("CodexPlusPlusManager"));
     }
     None
 }
@@ -439,7 +451,7 @@ mod macos_companion_tests {
             .join("ChatGPT Launcher.app/Contents/MacOS/chatgpt-launcher");
         let manager_macos_dir = portable_dir
             .path()
-            .join("Codex++ 管理工具.app/Contents/MacOS");
+            .join(format!("{MANAGER_PORTABLE_NAME}.app/Contents/MacOS"));
         std::fs::create_dir_all(&manager_macos_dir).unwrap();
         let manager_binary = manager_macos_dir.join(MANAGER_BINARY);
         std::fs::write(&manager_binary, b"").unwrap();
@@ -447,5 +459,30 @@ mod macos_companion_tests {
         let resolved = companion_binary_path_from_exe(&exe, MANAGER_BINARY);
 
         assert_eq!(resolved, manager_binary);
+    }
+
+    /// A machine with both the installed full manager and the portable
+    /// skin-only companion should prefer the standard installed name.
+    #[test]
+    fn prefers_installed_manager_name_when_both_siblings_exist() {
+        let portable_dir = tempfile::tempdir().unwrap();
+        let exe = portable_dir
+            .path()
+            .join("ChatGPT Launcher.app/Contents/MacOS/chatgpt-launcher");
+        let installed_macos_dir = portable_dir
+            .path()
+            .join(format!("{MANAGER_NAME}.app/Contents/MacOS"));
+        let portable_macos_dir = portable_dir
+            .path()
+            .join(format!("{MANAGER_PORTABLE_NAME}.app/Contents/MacOS"));
+        std::fs::create_dir_all(&installed_macos_dir).unwrap();
+        std::fs::create_dir_all(&portable_macos_dir).unwrap();
+        let installed_binary = installed_macos_dir.join(MANAGER_BINARY);
+        std::fs::write(&installed_binary, b"").unwrap();
+        std::fs::write(portable_macos_dir.join(MANAGER_BINARY), b"").unwrap();
+
+        let resolved = companion_binary_path_from_exe(&exe, MANAGER_BINARY);
+
+        assert_eq!(resolved, installed_binary);
     }
 }

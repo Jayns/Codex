@@ -4,13 +4,15 @@ set -euo pipefail
 # Assembles a self-contained macOS portable distribution:
 #
 #   <OutputDir>/
-#     ChatGPT Launcher.app/       double-click to run; config dialog on first launch
-#     Codex++ 管理工具.app/       sibling bundle; "打开管理工具" in the injected
-#                                 Codex menu launches this restricted to the
-#                                 皮肤管理 (Dream Skin) screen (--skin-only) —
-#                                 the portable build's relay/plugin settings
-#                                 live in config.ini instead, so the rest of
-#                                 the manager UI would be redundant here.
+#     ChatGPT Launcher.app/            double-click to run; config dialog on first launch
+#     Codex++ 皮肤管理工具.app/        sibling bundle (separate from the installed
+#                                      full manager's Codex++ 管理工具.app / bundle
+#                                      id); "打开皮肤管理" in the injected Codex
+#                                      menu launches this restricted to the
+#                                      皮肤管理 (Dream Skin) screen (--skin-only) —
+#                                      the portable build's relay/plugin settings
+#                                      live in config.ini instead, so the rest of
+#                                      the manager UI would be redundant here.
 #
 # Unlike the DMG installer (package-dmg.sh), this does not register either
 # app anywhere; the folder (and the config.ini created next to the launcher
@@ -63,9 +65,11 @@ BINARY_PATH="$ROOT/target/release/chatgpt-launcher"
 # the actual Codex icon.
 ICON_SOURCE_ICO="$ROOT/apps/codex-plus-launcher/assets/codex-app-icon.ico"
 
-MANAGER_APP_NAME="Codex++ 管理工具"
+MANAGER_APP_NAME="Codex++ 皮肤管理工具"
 MANAGER_EXECUTABLE_NAME="codex-plus-plus-manager"
-MANAGER_BUNDLE_ID="com.bigpizzav3.codexplusplus.manager"
+# Distinct from the installed full manager's com.bigpizzav3.codexplusplus.manager
+# so the two never get conflated by Launch Services on a machine that has both.
+MANAGER_BUNDLE_ID="com.bigpizzav3.codexplusplus.skinmanager"
 MANAGER_BINARY_PATH="$ROOT/target/release/codex-plus-plus-manager"
 MANAGER_ICON_SOURCE_PNG="$ROOT/apps/codex-plus-manager/src-tauri/icons/icon.png"
 
@@ -220,7 +224,7 @@ $APP_NAME 使用说明
 4. 启动时间较长，请耐心等待，ChatGPT 应用会自动打开。
 
 四、更换皮肤
-在 ChatGPT 里打开 Codex++ 增强菜单 → 点击"打开管理工具"，会自动启动同目录下的
+在 ChatGPT 里打开 Codex++ 增强菜单 → 点击"打开皮肤管理"，会自动启动同目录下的
 "$MANAGER_APP_NAME.app"，直接进入"皮肤管理"界面（其余设置项已隐藏，便携版的
 供应商/插件等设置只通过 config.ini 配置，不在这里）。
 
