@@ -13,7 +13,7 @@ pub const MANAGER_NAME: &str = "Codex++ 管理工具";
 /// (`scripts/installer/macos/package-portable.sh`), a separate .app from the
 /// full installed manager (`MANAGER_NAME`) so the two never get confused —
 /// `macos_companion_binary_from_exe` tries both sibling names.
-pub const MANAGER_PORTABLE_NAME: &str = "Codex++ 皮肤管理工具";
+pub const MANAGER_PORTABLE_NAME: &str = "Codex 皮肤管理工具";
 pub const SILENT_BINARY: &str = "codex-plus-plus";
 pub const MANAGER_BINARY: &str = "codex-plus-plus-manager";
 pub const SILENT_BUNDLE_ID: &str = "com.bigpizzav3.codexplusplus";

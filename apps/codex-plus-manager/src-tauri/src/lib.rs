@@ -52,7 +52,7 @@ pub fn run() {
                 "/index.html"
             };
             let window_title = if skin_only {
-                "Codex++ 换肤"
+                "Codex 换肤"
             } else {
                 "Codex++ 管理工具"
             };

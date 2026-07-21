@@ -71,7 +71,7 @@ jobs:
       - name: Build manager (skin-only companion)
         run: cargo build --release -p codex-plus-manager --bin codex-plus-plus-manager
 
-      - name: Package ChatGPT Launcher.app + Codex++ 皮肤管理工具.app
+      - name: Package ChatGPT Launcher.app + Codex 皮肤管理工具.app
         run: |
           mkdir -p target/release
           cp "target/${{ matrix.target }}/release/chatgpt-launcher" target/release/chatgpt-launcher

@@ -74,7 +74,7 @@ scripts/installer/macos/package-portable.sh dist/macos/portable --build
   - 图标复用 Windows 便携版任务栏用的同一份 Codex App 图标
     （`apps/codex-plus-launcher/assets/codex-app-icon.ico`），先转成 PNG 再用
     `sips` + `iconutil` 生成 `.icns`。
-- `dist/macos/portable/Codex++ 皮肤管理工具.app` —— 见下面「换肤：打包管理器
+- `dist/macos/portable/Codex 皮肤管理工具.app` —— 见下面「换肤：打包管理器
   App（skin-only 模式）」。
 
 两者都会做一次 ad-hoc 签名（`codesign --sign -`），避免刚构建出来的 bundle
@@ -104,7 +104,7 @@ Dream Skin 换肤（那是 manager App 的 `settings.json`/`BackendSettings` 里
   `apps/codex-plus-manager/src-tauri/src/lib.rs`（窗口 URL/标题）、
   `apps/codex-plus-manager/src/App.tsx`（`skinOnly` 路由过滤 +
   `.shell.no-sidebar` 撑满宽度）。
-- `Codex++ 皮肤管理工具.app` 作为 `ChatGPT Launcher.app` 的**同级目录**打包
+- `Codex 皮肤管理工具.app` 作为 `ChatGPT Launcher.app` 的**同级目录**打包
   （而不是子目录），有意用**和安装版不同的名字 + bundle id**
   （`com.bigpizzav3.codexplusplus.skinmanager`，安装版是
   `MANAGER_NAME` = "Codex++ 管理工具" /
@@ -120,7 +120,7 @@ Dream Skin 换肤（那是 manager App 的 `settings.json`/`BackendSettings` 里
 - 安装版（`codex-plus-plus` + `codex-plus-plus-manager` 走 DMG 安装）不受
   影响：`main.rs` 仍用 `LauncherHooks::default()`，"打开皮肤管理"没有
   `--skin-only`，照常打开完整 manager 界面。
-- `Codex++ 皮肤管理工具.app` 的 `Info.plist` 里额外写了
+- `Codex 皮肤管理工具.app` 的 `Info.plist` 里额外写了
   `LSEnvironment { CODEX_PLUS_SKIN_ONLY = 1 }`（`create_app` 的可选环境变量
   参数，见 `package-portable.sh`），所以哪怕用户直接在 Finder 里双击这个
   bundle（不经过 ChatGPT 菜单、不带 `--skin-only` 参数），也一样是 skin-only
@@ -155,9 +155,9 @@ macOS 便携包布局大致：
 
 ```
 dist/macos/portable/
-  ChatGPT Launcher.app/            # 打包脚本生成，双击运行
-  Codex++ 皮肤管理工具.app/        # 打包脚本生成，"打开皮肤管理"启动，仅显示皮肤管理
-  使用说明.txt                      # 打包脚本生成，随包分发
+  ChatGPT Launcher.app/       # 打包脚本生成，双击运行
+  Codex 皮肤管理工具.app/     # 打包脚本生成，"打开皮肤管理"启动，仅显示皮肤管理
+  使用说明.txt                 # 打包脚本生成，随包分发
 ```
 
 （`config.ini` 在首次保存配置后生成于

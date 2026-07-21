@@ -5,7 +5,7 @@ set -euo pipefail
 #
 #   <OutputDir>/
 #     ChatGPT Launcher.app/            double-click to run; config dialog on first launch
-#     Codex++ 皮肤管理工具.app/        sibling bundle (separate from the installed
+#     Codex 皮肤管理工具.app/          sibling bundle (separate from the installed
 #                                      full manager's Codex++ 管理工具.app / bundle
 #                                      id); "打开皮肤管理" in the injected Codex
 #                                      menu launches this restricted to the
@@ -65,7 +65,7 @@ BINARY_PATH="$ROOT/target/release/chatgpt-launcher"
 # the actual Codex icon.
 ICON_SOURCE_ICO="$ROOT/apps/codex-plus-launcher/assets/codex-app-icon.ico"
 
-MANAGER_APP_NAME="Codex++ 皮肤管理工具"
+MANAGER_APP_NAME="Codex 皮肤管理工具"
 MANAGER_EXECUTABLE_NAME="codex-plus-plus-manager"
 # Distinct from the installed full manager's com.bigpizzav3.codexplusplus.manager
 # so the two never get conflated by Launch Services on a machine that has both.
