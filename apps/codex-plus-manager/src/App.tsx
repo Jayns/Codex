@@ -2641,6 +2641,7 @@ export function App() {
 
   return (
     <div className={`shell ${theme}`}>
+      {skinOnlyMode ? null : (
       <aside className="sidebar">
         <div className="brand">
           <div className="brand-copy">
@@ -2684,6 +2685,7 @@ export function App() {
           })}
         </nav>
       </aside>
+      )}
       <main className="workspace">
         <header className="topbar" key={`topbar-${route}`}>
           <div>
