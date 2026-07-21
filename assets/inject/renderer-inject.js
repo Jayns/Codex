@@ -3189,6 +3189,10 @@
               </div>
             </div>
             <div class="codex-plus-row">
+              <div><div class="codex-plus-row-title">打开皮肤管理</div><div class="codex-plus-row-description">启动皮肤管理工具，切换或自定义 Dream Skin 主题。</div></div>
+              <button type="button" class="codex-plus-action-button" data-codex-open-manager="true">打开皮肤管理</button>
+            </div>
+            <div class="codex-plus-row">
               <div><div class="codex-plus-row-title">Codex增强</div><div class="codex-plus-row-description">关闭后停用删除、导出、移动、插件相关和菜单位置增强。</div></div>
               <button type="button" class="codex-plus-toggle" data-codex-backend-setting="enhancementsEnabled"><span></span></button>
             </div>
