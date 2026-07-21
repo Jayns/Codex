@@ -8,8 +8,6 @@ use codex_plus_core::models::{DeleteResult, ExportResult, SessionRef};
 use codex_plus_core::routes::{BridgeContext, BridgeDataService, BridgeRuntimeService};
 use codex_plus_core::user_scripts::UserScriptManager;
 use serde_json::{Value, json};
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -28,6 +26,27 @@ impl Default for LauncherHooks {
             runtime: Arc::new(LauncherRuntimeService::new(
                 9229,
                 default_user_script_manager(),
+                Vec::new(),
+            )),
+        }
+    }
+}
+
+impl LauncherHooks {
+    /// Same wiring as [`Default`], except "打开管理工具" launches the manager
+    /// restricted to the Dream Skin screen (`--skin-only`). The portable
+    /// distribution has no relay/plugin/session settings of its own (those
+    /// live in `config.ini`, edited through the small native config dialog),
+    /// so the full manager UI would be confusing there — this is the only
+    /// part of it that's still useful in a portable install.
+    pub fn portable() -> Self {
+        Self {
+            core: Arc::new(DefaultLaunchHooks::default()),
+            data: Arc::new(LauncherDataService::default()),
+            runtime: Arc::new(LauncherRuntimeService::new(
+                9229,
+                default_user_script_manager(),
+                vec!["--skin-only".to_string()],
             )),
         }
     }
@@ -277,14 +296,20 @@ pub struct LauncherRuntimeService {
     debug_port: Mutex<u16>,
     websocket_url: Mutex<Option<String>>,
     user_scripts: UserScriptManager,
+    manager_launch_args: Vec<String>,
 }
 
 impl LauncherRuntimeService {
-    pub fn new(debug_port: u16, user_scripts: UserScriptManager) -> Self {
+    pub fn new(
+        debug_port: u16,
+        user_scripts: UserScriptManager,
+        manager_launch_args: Vec<String>,
+    ) -> Self {
         Self {
             debug_port: Mutex::new(debug_port),
             websocket_url: Mutex::new(None),
             user_scripts,
+            manager_launch_args,
         }
     }
 
@@ -343,7 +368,7 @@ impl BridgeRuntimeService for LauncherRuntimeService {
     async fn open_manager(&self) -> anyhow::Result<Value> {
         let target = codex_plus_core::install::spawn_companion(
             codex_plus_core::install::MANAGER_BINARY,
-            std::iter::empty::<&str>(),
+            self.manager_launch_args.iter().map(String::as_str),
         )
         .map_err(|error| anyhow::anyhow!("启动管理工具失败：{error}"))?;
         Ok(json!({

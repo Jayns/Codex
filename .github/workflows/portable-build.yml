@@ -46,6 +46,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -54,22 +59,33 @@ jobs:
       - name: Build portable launcher
         run: cargo build --release -p codex-plus-launcher --bin chatgpt-launcher --target ${{ matrix.target }}
 
-      - name: Package ChatGPT Launcher.app
+      - name: Build manager frontend
+        working-directory: apps/codex-plus-manager
+        run: |
+          npm install --package-lock=false
+          npm run vite:build
+
+      # Native build (no --target): the manager .app is bundled as a sibling
+      # to the launcher and only needs to match this runner's own
+      # architecture, same as matrix.target does for the launcher above.
+      - name: Build manager (skin-only companion)
+        run: cargo build --release -p codex-plus-manager --bin codex-plus-plus-manager
+
+      - name: Package ChatGPT Launcher.app + Codex++ 管理工具.app
         run: |
           mkdir -p target/release
           cp "target/${{ matrix.target }}/release/chatgpt-launcher" target/release/chatgpt-launcher
           bash scripts/installer/macos/package-portable.sh dist/macos/portable
 
-      # Zip with ditto so the .app keeps its executable bits and structure;
+      # Zip the whole portable folder (both .app bundles + 使用说明.txt) with
+      # ditto so they keep their executable bits and bundle structure;
       # upload-artifact alone would strip them.
-      - name: Zip .app bundle
-        run: |
-          cd dist/macos/portable
-          ditto -c -k --keepParent "ChatGPT Launcher.app" "codex-portable-macos-${{ matrix.arch }}.zip"
+      - name: Zip portable folder
+        run: ditto -c -k --keepParent dist/macos/portable "dist/macos/codex-portable-macos-${{ matrix.arch }}.zip"
 
       - name: Upload portable app
         uses: actions/upload-artifact@v4
         with:
           name: codex-portable-macos-${{ matrix.arch }}
-          path: dist/macos/portable/codex-portable-macos-${{ matrix.arch }}.zip
+          path: dist/macos/codex-portable-macos-${{ matrix.arch }}.zip
           if-no-files-found: error

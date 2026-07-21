@@ -84,7 +84,7 @@ async fn run() -> Result<()> {
     };
 
     let settings = config.to_backend_settings();
-    let hooks = LauncherHooks::default();
+    let hooks = LauncherHooks::portable();
     hooks.apply_active_relay_profile(&settings).await?;
 
     let options = LaunchOptions {

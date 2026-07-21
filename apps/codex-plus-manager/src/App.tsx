@@ -731,6 +731,7 @@ function syncMarketInstalledState(current: ScriptMarketResult | null, userScript
 
 type StartupResult = CommandResult<{
   showUpdate: boolean;
+  skinOnly: boolean;
 }>;
 
 type Route = "overview" | "relay" | "relayEnvironment" | "sessions" | "context" | "enhance" | "dreamSkin" | "zedRemote" | "userScripts" | "recommendations" | "maintenance" | "about" | "settings";
@@ -845,6 +846,8 @@ const defaultSettings: BackendSettings = {
 export function App() {
   const [theme, setTheme] = useState<Theme>(() => loadInitialTheme());
   const [route, setRoute] = useState<Route>(() => loadInitialRoute());
+  const [skinOnlyMode] = useState<boolean>(() => loadSkinOnlyMode());
+  const visibleRoutes = skinOnlyMode ? routes.filter((item) => item.id === "dreamSkin") : routes;
   const [notice, setNotice] = useState<{ title: string; message: string; status?: Status } | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{
     title: string;
@@ -2661,7 +2664,7 @@ export function App() {
           </div>
         </div>
         <nav className="nav">
-          {routes.map((item) => {
+          {visibleRoutes.map((item) => {
             const Icon = item.icon;
             return (
             <button
@@ -2704,10 +2707,12 @@ export function App() {
             >
               {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </Button>
-            <Button onClick={() => void actions.restart()} title={t("重启 Codex++")} variant="outline">
-              <Rocket className="h-4 w-4" />
-              {t("重启 Codex++")}
-            </Button>
+            {skinOnlyMode ? null : (
+              <Button onClick={() => void actions.restart()} title={t("重启 Codex++")} variant="outline">
+                <Rocket className="h-4 w-4" />
+                {t("重启 Codex++")}
+              </Button>
+            )}
             <Button onClick={() => void actions.refreshCurrent()} size="icon" title={t("刷新当前页面")} variant="outline">
               <RefreshCw className="h-4 w-4" />
             </Button>
@@ -8622,8 +8627,16 @@ function loadInitialTheme(): Theme {
 function loadInitialRoute(): Route {
   if (typeof window === "undefined") return "overview";
   const params = new URLSearchParams(window.location.search);
+  if (params.get("skinOnly") === "1") {
+    return "dreamSkin";
+  }
   if (params.get("showUpdate") === "1" || window.location.hash === "#about") {
     return "about";
   }
   return "overview";
+}
+
+function loadSkinOnlyMode(): boolean {
+  if (typeof window === "undefined") return false;
+  return new URLSearchParams(window.location.search).get("skinOnly") === "1";
 }

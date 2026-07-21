@@ -30,5 +30,10 @@ fn main() {
             std::env::set_var("CODEX_PLUS_SHOW_UPDATE", "1");
         }
     }
+    if std::env::args().any(|arg| arg == "--skin-only") {
+        unsafe {
+            std::env::set_var("CODEX_PLUS_SKIN_ONLY", "1");
+        }
+    }
     codex_plus_manager_lib::run();
 }

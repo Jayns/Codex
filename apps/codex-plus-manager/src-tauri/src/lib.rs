@@ -40,17 +40,25 @@ pub fn run() {
         );
     }
     let show_update = commands::startup_should_show_update();
+    let skin_only = commands::startup_should_show_skin_only();
     let run_result = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(move |app| {
-            let url = if show_update {
+            let url = if skin_only {
+                "/index.html?skinOnly=1"
+            } else if show_update {
                 "/index.html?showUpdate=1"
             } else {
                 "/index.html"
             };
+            let window_title = if skin_only {
+                "Codex++ 换肤"
+            } else {
+                "Codex++ 管理工具"
+            };
             let mut main_window_builder =
                 tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App(url.into()))
-                    .title("Codex++ 管理工具")
+                    .title(window_title)
                     .inner_size(1180.0, 820.0)
                     .min_inner_size(960.0, 720.0);
             if let Some(icon) = app.default_window_icon().cloned() {

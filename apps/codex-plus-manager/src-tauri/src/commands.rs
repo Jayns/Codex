@@ -419,6 +419,7 @@ pub struct ScriptMarketPayload {
 #[serde(rename_all = "camelCase")]
 pub struct StartupPayload {
     pub show_update: bool,
+    pub skin_only: bool,
 }
 
 #[tauri::command]
@@ -437,6 +438,7 @@ pub fn startup_options() -> CommandResult<StartupPayload> {
         "启动参数已读取。",
         StartupPayload {
             show_update: startup_should_show_update(),
+            skin_only: startup_should_show_skin_only(),
         },
     )
 }
@@ -454,6 +456,27 @@ where
     S: AsRef<str>,
 {
     args.into_iter().any(|arg| arg.as_ref() == "--show-update") || env_value == Some("1")
+}
+
+/// True when the manager was launched by the portable launcher solely to let
+/// the user pick a Dream Skin theme (e.g. `chatgpt-launcher --skin-only`
+/// forwarded through `spawn_companion`). The portable distribution has no
+/// relay/plugin/session settings of its own (those live in `config.ini`), so
+/// exposing the full manager UI there would be confusing; this restricts the
+/// window to just the "皮肤管理" screen.
+pub fn startup_should_show_skin_only() -> bool {
+    should_show_skin_only(
+        std::env::args(),
+        std::env::var("CODEX_PLUS_SKIN_ONLY").ok().as_deref(),
+    )
+}
+
+fn should_show_skin_only<I, S>(args: I, env_value: Option<&str>) -> bool
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    args.into_iter().any(|arg| arg.as_ref() == "--skin-only") || env_value == Some("1")
 }
 
 #[tauri::command]
@@ -4282,6 +4305,30 @@ mod tests {
     fn startup_options_honors_show_update_argument() {
         assert!(should_show_update(
             ["codex-plus-plus-manager.exe", "--show-update"],
+            None
+        ));
+    }
+
+    #[test]
+    fn startup_options_honors_skin_only_environment() {
+        unsafe {
+            std::env::set_var("CODEX_PLUS_SKIN_ONLY", "1");
+        }
+
+        let result = startup_options();
+
+        unsafe {
+            std::env::remove_var("CODEX_PLUS_SKIN_ONLY");
+        }
+
+        assert_eq!(result.status, "ok");
+        assert!(result.payload.skin_only);
+    }
+
+    #[test]
+    fn startup_options_honors_skin_only_argument() {
+        assert!(should_show_skin_only(
+            ["codex-plus-plus-manager.exe", "--skin-only"],
             None
         ));
     }

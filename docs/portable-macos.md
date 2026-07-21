@@ -66,18 +66,54 @@ Codex 退出为止（见下面「打包成 .app」）。
 scripts/installer/macos/package-portable.sh dist/macos/portable --build
 ```
 
-会生成 `dist/macos/portable/ChatGPT Launcher.app`：
+会生成两个 bundle：
 
-- `Info.plist` 里 `LSUIElement = true`，没有 Dock 图标；双击直接运行，不会像裸
-  可执行文件那样弹出 Terminal 窗口。
-- 图标复用 Windows 便携版任务栏用的同一份 Codex App 图标
-  （`apps/codex-plus-launcher/assets/codex-app-icon.ico`），先转成 PNG 再用
-  `sips` + `iconutil` 生成 `.icns`，两个平台的便携启动器图标保持一致（不是
-  `codex-plus-manager` 那个 "C++" logo）。
-- 打包后会做一次 ad-hoc 签名（`codesign --sign -`），避免刚构建出来的 bundle
-  被 Gatekeeper 当成"已损坏"拒绝运行；不涉及需要 Apple 开发者证书的正式签名/公证。
-- 参数：`[OutputDir] [--build] [--version X.Y.Z]`；`--build` 会先跑
-  `cargo build --release -p codex-plus-launcher --bin chatgpt-launcher`。
+- `dist/macos/portable/ChatGPT Launcher.app`
+  - `Info.plist` 里 `LSUIElement = true`，没有 Dock 图标；双击直接运行，不会像裸
+    可执行文件那样弹出 Terminal 窗口。
+  - 图标复用 Windows 便携版任务栏用的同一份 Codex App 图标
+    （`apps/codex-plus-launcher/assets/codex-app-icon.ico`），先转成 PNG 再用
+    `sips` + `iconutil` 生成 `.icns`。
+- `dist/macos/portable/Codex++ 管理工具.app` —— 见下面「换肤：打包管理器
+  App（skin-only 模式）」。
+
+两者都会做一次 ad-hoc 签名（`codesign --sign -`），避免刚构建出来的 bundle
+被 Gatekeeper 当成"已损坏"拒绝运行；不涉及需要 Apple 开发者证书的正式签名/公证。
+
+参数：`[OutputDir] [--build] [--version X.Y.Z]`；`--build` 会依次跑：
+`cargo build --release -p codex-plus-launcher --bin chatgpt-launcher`、
+`npm install && npm run vite:build`（manager 前端）、
+`cargo build --release -p codex-plus-manager --bin codex-plus-plus-manager`。
+
+### 换肤：打包管理器 App（skin-only 模式）
+
+便携版的中转配置走 `config.ini`，不是 `settings.json`，所以没有入口去配置
+Dream Skin 换肤（那是 manager App 的 `settings.json`/`BackendSettings` 里的
+字段）。为此把 manager 也打进便携包，但**限制成只显示"皮肤管理"一个界面**，
+避免暴露供应商配置、插件市场等和便携版模型不兼容的设置项：
+
+- 便携启动器注入进 ChatGPT 的增强菜单里"打开管理工具"按钮，便携模式下改为调用
+  `LauncherHooks::portable()`（`apps/codex-plus-launcher/src/lib.rs`），这个
+  构造函数会让 `open_manager` 额外带上 `--skin-only` 参数启动 manager。
+- manager 侧：`--skin-only`（或环境变量 `CODEX_PLUS_SKIN_ONLY=1`）会让窗口
+  加载 `/index.html?skinOnly=1`，前端 `App.tsx` 据此把侧边栏导航收缩到只剩
+  "皮肤管理"一项，并隐藏"重启 Codex++"按钮（该操作面向已安装版的 relay
+  流程，便携模式下语义不对）。相关代码：
+  `apps/codex-plus-manager/src-tauri/src/commands.rs`
+  （`startup_should_show_skin_only` / `StartupPayload.skin_only`）、
+  `apps/codex-plus-manager/src-tauri/src/lib.rs`（窗口 URL/标题）、
+  `apps/codex-plus-manager/src/App.tsx`（`skinOnly` 路由过滤）。
+- `Codex++ 管理工具.app` 作为 `ChatGPT Launcher.app` 的**同级目录**打包
+  （而不是子目录），可执行文件命名为 `codex-plus-plus-manager`，这样
+  `codex_plus_core::install::spawn_companion` 在便携模式下（launcher 所在
+  `.app` 名字不是已知的安装版名字）会走
+  `companion_binary_path_from_exe` 的兜底分支：在 launcher `.app` 的同级
+  目录下找 `Codex++ 管理工具.app/Contents/MacOS/codex-plus-plus-manager`。
+  回归测试见 `crates/codex-plus-core/src/install/mod.rs` 的
+  `macos_companion_tests::resolves_sibling_manager_bundle_next_to_portable_launcher`。
+- 安装版（`codex-plus-plus` + `codex-plus-plus-manager` 走 DMG 安装）不受
+  影响：`main.rs` 仍用 `LauncherHooks::default()`，"打开管理工具"没有
+  `--skin-only`，照常打开完整 manager 界面。
 
 ### `config.ini` 的位置
 
@@ -108,8 +144,9 @@ macOS 便携包布局大致：
 
 ```
 dist/macos/portable/
-  ChatGPT Launcher.app/   # 打包脚本生成，双击运行
-  使用说明.txt             # 打包脚本生成，随包分发
+  ChatGPT Launcher.app/       # 打包脚本生成，双击运行
+  Codex++ 管理工具.app/       # 打包脚本生成，"打开管理工具"启动，仅显示皮肤管理
+  使用说明.txt                 # 打包脚本生成，随包分发
 ```
 
 （`config.ini` 在首次保存配置后生成于

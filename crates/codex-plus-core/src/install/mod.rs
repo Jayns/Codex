@@ -419,3 +419,33 @@ pub(crate) fn install_root_or_default(options: &InstallOptions) -> PathBuf {
         .or_else(default_install_root)
         .unwrap_or_else(|| PathBuf::from("."))
 }
+
+#[cfg(all(test, target_os = "macos"))]
+mod macos_companion_tests {
+    use super::*;
+
+    /// The portable distribution ships "ChatGPT Launcher.app" and
+    /// "Codex++ 管理工具.app" as siblings in the same folder
+    /// (scripts/installer/macos/package-portable.sh); "打开管理工具" must
+    /// resolve to the sibling bundle's executable, not a bundle-relative
+    /// lookup inside the launcher's own .app. The resolver picks between two
+    /// candidate executable names by checking which one actually exists on
+    /// disk, so this needs a real directory layout rather than bare paths.
+    #[test]
+    fn resolves_sibling_manager_bundle_next_to_portable_launcher() {
+        let portable_dir = tempfile::tempdir().unwrap();
+        let exe = portable_dir
+            .path()
+            .join("ChatGPT Launcher.app/Contents/MacOS/chatgpt-launcher");
+        let manager_macos_dir = portable_dir
+            .path()
+            .join("Codex++ 管理工具.app/Contents/MacOS");
+        std::fs::create_dir_all(&manager_macos_dir).unwrap();
+        let manager_binary = manager_macos_dir.join(MANAGER_BINARY);
+        std::fs::write(&manager_binary, b"").unwrap();
+
+        let resolved = companion_binary_path_from_exe(&exe, MANAGER_BINARY);
+
+        assert_eq!(resolved, manager_binary);
+    }
+}
