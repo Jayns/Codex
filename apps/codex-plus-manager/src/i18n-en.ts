@@ -77,7 +77,7 @@ export const EN_PLAIN: Record<string, string> = {
   "项目来源：Fei-Away/Codex-Dream-Skin · 原作者 Fei-Away · MIT License · 第三方图片需自行确认授权":
     "Source: Fei-Away/Codex-Dream-Skin · Fei-Away · MIT License · Confirm third-party image rights before use",
   "运行状态": "Runtime status",
-  "配置保存在 Codex++，实时操作通过本机回环 CDP 执行": "Configuration stays in Codex++; live operations use the local loopback CDP connection",
+  "配置保存在 Codex，实时操作通过本机回环 CDP 执行": "Configuration stays in Codex; live operations use the local loopback CDP connection",
   "应用会保存当前图片与主题配置；恢复原始外观不会删除主题。":
     "Applying saves the current image and theme; restoring the original appearance does not delete the theme.",
   "当前状态": "Current status",
@@ -87,8 +87,8 @@ export const EN_PLAIN: Record<string, string> = {
   "Codex 原始外观": "Original Codex appearance",
   "刷新状态": "Refresh status",
   "图片与主题": "Image and theme",
-  "自定义图片会被导入 Codex++ 托管目录；主题字段与目标项目 theme.json 对齐":
-    "Custom images are imported into Codex++ managed storage; theme fields match the source theme.json.",
+  "自定义图片会被导入 Codex 托管目录；主题字段与目标项目 theme.json 对齐":
+    "Custom images are imported into Codex managed storage; theme fields match the source theme.json.",
   "我的主题": "My themes",
   "选择卡片只会载入草稿；需要完整切换时会保存为待应用主题。":
     "Selecting a card only loads a draft. Complete switches are saved as a pending theme.",

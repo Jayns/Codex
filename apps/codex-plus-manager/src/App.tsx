@@ -3617,7 +3617,7 @@ function DreamSkinScreen({
       </Panel>
 
       <Panel className="dream-skin-panel">
-        <CardHead title={t("运行状态")} detail={t("配置保存在 Codex++，实时操作通过本机回环 CDP 执行")} />
+        <CardHead title={t("运行状态")} detail={t("配置保存在 Codex，实时操作通过本机回环 CDP 执行")} />
         <CardContent>
           <div className="dream-skin-runtime-grid">
             <label className="switch-row compact">
@@ -3684,7 +3684,7 @@ function DreamSkinScreen({
       </Panel>
 
       <Panel className="dream-skin-panel">
-        <CardHead title={t("图片与主题")} detail={t("自定义图片会被导入 Codex++ 托管目录；主题字段与目标项目 theme.json 对齐")} />
+        <CardHead title={t("图片与主题")} detail={t("自定义图片会被导入 Codex 托管目录；主题字段与目标项目 theme.json 对齐")} />
         <CardContent>
           <div aria-label={t("主题视图")} className="dream-skin-view-tabs" role="tablist">
             <button
