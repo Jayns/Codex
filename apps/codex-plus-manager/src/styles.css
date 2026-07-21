@@ -145,6 +145,10 @@ body {
   color: hsl(var(--foreground));
 }
 
+.shell.no-sidebar {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .sidebar {
   min-height: 0;
   overflow: hidden;

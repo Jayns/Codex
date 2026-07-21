@@ -2640,7 +2640,7 @@ export function App() {
   const hasUpdate = update?.updateAvailable === true;
 
   return (
-    <div className={`shell ${theme}`}>
+    <div className={`shell ${theme}${skinOnlyMode ? " no-sidebar" : ""}`}>
       {skinOnlyMode ? null : (
       <aside className="sidebar">
         <div className="brand">
