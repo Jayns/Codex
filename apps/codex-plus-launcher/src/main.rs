@@ -8,6 +8,19 @@ use std::path::{Path, PathBuf};
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    if let Err(error) = launcher_main().await {
+        let _ = codex_plus_core::diagnostic_log::append_diagnostic_log(
+            "launcher.failed",
+            json!({
+                "message": error.to_string()
+            }),
+        );
+        return Err(error);
+    }
+    Ok(())
+}
+
+async fn launcher_main() -> Result<()> {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     let helper_only = args.iter().any(|arg| arg == "--helper-only");
     let options = parse_launch_options(args.iter());
@@ -108,6 +121,7 @@ fn should_recover_stale_launcher(debug_port: u16) -> bool {
 
 async fn activate_existing_codex_app(options: &LaunchOptions) -> anyhow::Result<()> {
     let hooks = LauncherHooks::default();
+    let helper_port = hooks.select_helper_port(options.helper_port);
     let settings = hooks.load_settings().await?;
     let app_dir = hooks.resolve_app_dir(options.app_dir.as_deref(), &settings)?;
     let launch_result = hooks
@@ -119,7 +133,7 @@ async fn activate_existing_codex_app(options: &LaunchOptions) -> anyhow::Result<
         )
         .await;
     if settings.enhancements_enabled {
-        hooks.start_helper(options.helper_port).await?;
+        hooks.start_helper(helper_port).await?;
     }
     let process_ids = codex_plus_core::watcher::find_codex_processes();
     let mut activated = false;
@@ -134,14 +148,14 @@ async fn activate_existing_codex_app(options: &LaunchOptions) -> anyhow::Result<
     }
     let injection_ready = if settings.enhancements_enabled {
         hooks
-            .ensure_injection(options.debug_port, options.helper_port, &app_dir)
+            .ensure_injection(options.debug_port, helper_port, &app_dir)
             .await
     } else {
         false
     };
     if injection_ready {
         hooks
-            .start_bridge_watchdog(options.debug_port, options.helper_port)
+            .start_bridge_watchdog(options.debug_port, helper_port)
             .await?;
         hooks.write_status("running").await;
     } else if settings.enhancements_enabled {
@@ -152,7 +166,8 @@ async fn activate_existing_codex_app(options: &LaunchOptions) -> anyhow::Result<
         json!({
             "app_dir": app_dir.to_string_lossy(),
             "debug_port": options.debug_port,
-            "helper_port": options.helper_port,
+            "helper_port": helper_port,
+            "requested_helper_port": options.helper_port,
             "process_ids": process_ids,
             "activated": activated,
             "injection_ready": injection_ready,
@@ -271,7 +286,9 @@ mod tests {
         let source = include_str!("lib.rs");
 
         assert!(source.contains("async fn start_bridge_watchdog"));
-        assert!(source.contains(".start_bridge_watchdog(debug_port, helper_port)"));
+        assert!(source.contains("self.watchdog_bridge_context()?"));
+        assert!(source.contains("set_bridge_reinjector(reinjector)"));
+        assert!(source.contains("inject_with_context(debug_port, helper_port, ctx, runtime)"));
         assert!(source.contains("async fn ensure_computer_use_config"));
         assert!(source.contains("self.core.ensure_computer_use_config(settings).await"));
         assert!(source.contains("async fn ensure_plugin_marketplace_config"));

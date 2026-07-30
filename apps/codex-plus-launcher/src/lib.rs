@@ -3,7 +3,7 @@
 //! Keeping this in one place avoids maintaining two copies of the CDP
 //! bridge/data-service wiring.
 
-use codex_plus_core::launcher::{DefaultLaunchHooks, LaunchHooks};
+use codex_plus_core::launcher::{BridgeReinjector, DefaultLaunchHooks, LaunchHooks};
 use codex_plus_core::models::{DeleteResult, ExportResult, SessionRef};
 use codex_plus_core::routes::{BridgeContext, BridgeDataService, BridgeRuntimeService};
 use codex_plus_core::user_scripts::UserScriptManager;
@@ -16,6 +16,7 @@ pub struct LauncherHooks {
     pub core: Arc<DefaultLaunchHooks>,
     pub data: Arc<LauncherDataService>,
     pub runtime: Arc<LauncherRuntimeService>,
+    bridge_context: Arc<Mutex<Option<BridgeContext>>>,
 }
 
 impl Default for LauncherHooks {
@@ -28,6 +29,7 @@ impl Default for LauncherHooks {
                 default_user_script_manager(),
                 Vec::new(),
             )),
+            bridge_context: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -48,7 +50,16 @@ impl LauncherHooks {
                 default_user_script_manager(),
                 vec!["--skin-only".to_string()],
             )),
+            bridge_context: Arc::new(Mutex::new(None)),
         }
+    }
+
+    fn watchdog_bridge_context(&self) -> anyhow::Result<BridgeContext> {
+        self.bridge_context
+            .lock()
+            .map_err(|_| anyhow::anyhow!("bridge context lock poisoned"))?
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("bridge context is not initialized"))
     }
 }
 
@@ -124,11 +135,16 @@ impl LaunchHooks for LauncherHooks {
         app_dir: &Path,
     ) -> anyhow::Result<Option<BridgeContext>> {
         self.runtime.set_debug_port(debug_port);
-        Ok(Some(BridgeContext::core_with_data_and_app_dir(
+        let ctx = BridgeContext::core_with_data_and_app_dir(
             self.runtime.clone(),
             self.data.clone(),
             app_dir.to_path_buf(),
-        )))
+        );
+        *self
+            .bridge_context
+            .lock()
+            .map_err(|_| anyhow::anyhow!("bridge context lock poisoned"))? = Some(ctx.clone());
+        Ok(Some(ctx))
     }
 
     async fn inject_bridge(
@@ -145,6 +161,16 @@ impl LaunchHooks for LauncherHooks {
     }
 
     async fn start_bridge_watchdog(&self, debug_port: u16, helper_port: u16) -> anyhow::Result<()> {
+        let ctx = self.watchdog_bridge_context()?;
+        let runtime = self.runtime.clone();
+        let reinjector: BridgeReinjector = Arc::new(move || {
+            let ctx = ctx.clone();
+            let runtime = runtime.clone();
+            Box::pin(
+                async move { inject_with_context(debug_port, helper_port, ctx, runtime).await },
+            )
+        });
+        self.core.set_bridge_reinjector(reinjector).await;
         self.core
             .start_bridge_watchdog(debug_port, helper_port)
             .await
@@ -164,8 +190,9 @@ impl LaunchHooks for LauncherHooks {
     async fn wait_for_codex_exit(
         &self,
         launch: &codex_plus_core::launcher::CodexLaunch,
+        debug_port: u16,
     ) -> anyhow::Result<()> {
-        self.core.wait_for_codex_exit(launch).await
+        self.core.wait_for_codex_exit(launch, debug_port).await
     }
 
     async fn shutdown_helper(&self, helper_port: u16) {
@@ -326,6 +353,14 @@ impl LauncherRuntimeService {
 impl BridgeRuntimeService for LauncherRuntimeService {
     async fn user_script_inventory(&self) -> anyhow::Result<Value> {
         self.user_scripts.inventory()
+    }
+
+    async fn user_script_inventory_with_runtime_status(
+        &self,
+        payload: Value,
+    ) -> anyhow::Result<Value> {
+        self.user_scripts
+            .inventory_with_runtime_status(payload.get("runtime_status"))
     }
 
     async fn set_user_scripts_enabled(&self, enabled: bool) -> anyhow::Result<Value> {
@@ -574,4 +609,48 @@ pub fn builtin_user_scripts_dir() -> PathBuf {
         .and_then(|path| path.parent().map(Path::to_path_buf))
         .map(|path| path.join("user_scripts"))
         .unwrap_or_else(|| PathBuf::from("user_scripts"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn watchdog_reuses_bridge_context_with_data_service() {
+        let test_dir = std::env::temp_dir().join(format!(
+            "codex-plus-launcher-watchdog-test-{}",
+            std::process::id()
+        ));
+        let hooks = LauncherHooks {
+            core: Arc::new(DefaultLaunchHooks::default()),
+            data: Arc::new(LauncherDataService {
+                db_path: test_dir.join("state.sqlite"),
+                backup_dir: test_dir.join("backups"),
+            }),
+            runtime: Arc::new(LauncherRuntimeService::new(
+                9229,
+                UserScriptManager::new(
+                    test_dir.join("builtin"),
+                    test_dir.join("user"),
+                    test_dir.join("settings.json"),
+                ),
+                Vec::new(),
+            )),
+            bridge_context: Arc::new(Mutex::new(None)),
+        };
+
+        hooks.bridge_context(9229, &test_dir).await.unwrap();
+        let ctx = hooks.watchdog_bridge_context().unwrap();
+        let result = codex_plus_core::routes::handle_bridge_request(
+            ctx,
+            "/move-thread-workspace",
+            json!({"session_id": "missing", "title": "Missing", "target_cwd": "/new"}),
+        )
+        .await;
+
+        assert_ne!(
+            result["message"],
+            "Move workspace service is not wired in core launcher hooks"
+        );
+    }
 }
