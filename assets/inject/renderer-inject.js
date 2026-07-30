@@ -3488,7 +3488,7 @@
                 <div class="codex-plus-backend-label" data-codex-backend-status="true" data-status="checking">正在检查后端…</div>
               </div>
             </div>
-            <div class="codex-plus-row">
+            <div class="codex-plus-row" hidden>
               <div><div class="codex-plus-row-title">打开皮肤管理</div><div class="codex-plus-row-description">启动皮肤管理工具，切换或自定义 Dream Skin 主题。</div></div>
               <button type="button" class="codex-plus-action-button" data-codex-open-manager="true">打开皮肤管理</button>
             </div>
