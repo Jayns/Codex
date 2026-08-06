@@ -77,11 +77,16 @@ jobs:
           cp "target/${{ matrix.target }}/release/chatgpt-launcher" target/release/chatgpt-launcher
           bash scripts/installer/macos/package-portable.sh dist/macos/portable
 
-      # Zip the whole portable folder (both .app bundles + 使用说明.txt) with
-      # ditto so they keep their executable bits and bundle structure;
-      # upload-artifact alone would strip them.
+      # Zip the whole portable folder (both .app bundles + 使用说明.txt).
+      # Neither `ditto -c -k` nor macOS's built-in `zip` set the UTF-8
+      # filename flag, so the Chinese filenames in this folder (e.g.
+      # 使用说明.txt) get corrupted for any reader that doesn't fall back to
+      # guessing UTF-8 — including macOS's own Archive Utility, which then
+      # rejects the whole archive as an unsupported format. zip-utf8.py sets
+      # that flag explicitly while still preserving executable bits, which
+      # plain `actions/upload-artifact` (no zip step) would strip.
       - name: Zip portable folder
-        run: ditto -c -k --keepParent dist/macos/portable "dist/macos/codex-portable-macos-${{ matrix.arch }}.zip"
+        run: python3 scripts/installer/macos/zip-utf8.py dist/macos/portable "dist/macos/codex-portable-macos-${{ matrix.arch }}.zip"
 
       - name: Upload portable app
         uses: actions/upload-artifact@v4
