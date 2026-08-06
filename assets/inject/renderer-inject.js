@@ -6035,6 +6035,73 @@
     return changed;
   }
 
+  function reactFiberKeys(element) {
+    return Object.keys(element).filter((key) => key.startsWith("__reactFiber") || key.startsWith("__reactInternalInstance") || key.startsWith("__reactProps"));
+  }
+
+  function isWorkspaceChromeNode(node) {
+    if (!node || node.nodeType !== 1) return false;
+    if (node.closest?.('[data-app-action-sidebar-section-heading="Chats"], [data-app-action-sidebar-section-heading="Projects"], [data-app-action-sidebar-thread-id], [data-app-action-sidebar-project-row], [data-app-action-sidebar-project-id]')) {
+      return false;
+    }
+    return !!node.closest?.("main aside");
+  }
+
+  // Scoped, model-only re-implementation of the object-graph walker Codex++
+  // used to run over document.body's entire React fiber tree on every popup
+  // (removed upstream for being too broad — it could mutate any object
+  // reachable from body, not just model-related ones). This variant is only
+  // ever invoked on freshly-added popup/menu/listbox DOM nodes (never
+  // document.body), and only follows React's own fiber-shaped properties
+  // (child/sibling/return/memoized*) instead of every enumerable property —
+  // it can't wander into unrelated app state the old version could reach.
+  const MODEL_POPUP_FIBER_PROPERTY_KEYS = ["memoizedProps", "memoizedState", "pendingProps", "child", "sibling", "return"];
+
+  function patchModelPopupObjectGraph(root, visited, depth = 0) {
+    if (!root || typeof root !== "object" || visited.has(root) || depth > 6) return false;
+    visited.add(root);
+    let changed = patchModelContainer(root);
+    for (const key of MODEL_POPUP_FIBER_PROPERTY_KEYS) {
+      const value = root[key];
+      if (value && typeof value === "object" && patchModelPopupObjectGraph(value, visited, depth + 1)) changed = true;
+    }
+    const children = root.memoizedProps?.children;
+    if (Array.isArray(children)) {
+      children.forEach((child) => {
+        if (child && typeof child === "object" && patchModelPopupObjectGraph(child, visited, depth + 1)) changed = true;
+      });
+    }
+    return changed;
+  }
+
+  function modelPopupNodesFromMutations(mutations) {
+    if (!mutations) return [];
+    const selector = "[role='menu'], [role='listbox']";
+    const nodes = [];
+    mutations.forEach((mutation) => {
+      [...mutation.addedNodes].forEach((node) => {
+        if (node.nodeType !== 1 || isWorkspaceChromeNode(node)) return;
+        if (node.matches?.(selector) && !nodes.includes(node)) nodes.push(node);
+        node.querySelectorAll?.(selector).forEach((match) => {
+          if (!isWorkspaceChromeNode(match) && !nodes.includes(match)) nodes.push(match);
+        });
+      });
+    });
+    return nodes;
+  }
+
+  function patchModelPopupNodes(nodes) {
+    if (!codexPlusModelUnlockEnabled() || !codexPlusModelNames().length || !nodes.length) return false;
+    const visited = new WeakSet();
+    let changed = false;
+    for (const node of nodes.slice(0, 20)) {
+      for (const key of reactFiberKeys(node)) {
+        if (patchModelPopupObjectGraph(node[key], visited)) changed = true;
+      }
+    }
+    return changed;
+  }
+
   function modelJsonResponseLooksPatchable(payload) {
     if (!payload || typeof payload !== "object") return false;
     const descriptorArrays = [
@@ -6341,6 +6408,8 @@
       return;
     }
     runCodexModelWhitelistRefreshPass();
+    const popupNodes = modelPopupNodesFromMutations(mutations);
+    if (popupNodes.length) patchModelPopupNodes(popupNodes);
   }
 
   function threadIdVariants(sessionId) {
