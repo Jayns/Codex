@@ -68,6 +68,14 @@ fn injection_script_prefixes_helper_url_and_metadata() {
 }
 
 #[test]
+fn injection_script_hides_tabs_and_dialog_embedded_menu() {
+    let script = assets::injection_script(57321);
+
+    assert!(script.contains(".codex-plus-tabs { display: none; }"));
+    assert!(script.contains(r#"[role="dialog"] #${codexPlusMenuId} { display: none !important; }"#));
+}
+
+#[test]
 fn pet_real_mouse_settings_are_gated_to_windows_in_injected_ui() {
     let script = assets::injection_script(57321);
 
