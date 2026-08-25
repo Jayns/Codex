@@ -95,7 +95,7 @@ fn launcher_binary_embeds_codex_icon_resource() {
 }
 
 #[test]
-fn windows_binaries_request_administrator_privileges() {
+fn windows_binaries_run_as_invoker_without_administrator_privileges() {
     let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let manager_build =
         std::fs::read_to_string(manifest_dir.join("build.rs")).expect("read manager build.rs");
@@ -118,9 +118,12 @@ fn windows_binaries_request_administrator_privileges() {
 
     assert!(manager_build.contains("windows-app-manifest.xml"));
     assert!(launcher_build.contains("windows-app-manifest.xml"));
-    assert!(windows_manifest.contains("requireAdministrator"));
+    // Elevated launcher processes also elevate Codex, so Explorer file drops are blocked by UIPI.
+    assert!(windows_manifest.contains("asInvoker"));
+    assert!(!windows_manifest.contains("requireAdministrator"));
     assert!(windows_manifest.contains("Microsoft.Windows.Common-Controls"));
-    assert!(windows_installer.contains("RequestExecutionLevel admin"));
+    assert!(windows_installer.contains("RequestExecutionLevel user"));
+    assert!(!windows_installer.contains("RequestExecutionLevel admin"));
 }
 
 #[test]
@@ -219,7 +222,7 @@ fn relay_settings_keeps_profile_config_and_auth_files_isolated() {
 
     assert!(app_tsx.contains("snapshotActiveRelayFilesBeforeSwitch"));
     assert!(app_tsx.contains("backfill_relay_profile_from_live"));
-    assert!(app_tsx.contains("relayProfileSwitchValidation(selectedBeforeSave)"));
+    assert!(app_tsx.contains("relayProfileSwitchValidation(selectedBeforeSave, switchSettings)"));
     assert!(app_tsx.contains("缺少独立 config.toml"));
     assert!(app_tsx.contains("const command = relayProfileSwitchCommand(selectedAfterSave)"));
     assert!(app_tsx.contains("function relayProfileSwitchCommand"));
@@ -228,6 +231,9 @@ fn relay_settings_keeps_profile_config_and_auth_files_isolated() {
     assert!(app_tsx.contains("const createNewAggregateProfile = () =>"));
     assert!(app_tsx.contains("onClick={createNewAggregateProfile}"));
     assert!(app_tsx.contains("已打开聚合供应商详情"));
+    assert!(app_tsx.contains(
+        "buildRelayConfigToml(profile, { includeBearerToken: false, requiresOpenAiAuth: true })"
+    ));
     assert!(!commands_rs.contains("缺少独立 auth.json"));
     assert!(commands_rs.contains("backfill_relay_profile_from_live"));
     assert!(commands_rs.contains("apply_relay_profile_to_home_with_switch_rules"));
@@ -263,6 +269,9 @@ fn relay_context_management_is_global_not_supplier_scoped() {
     assert!(app_tsx.contains("sync_live_context_entries"));
     assert!(app_tsx.contains("refreshLiveContextEntries"));
     assert!(app_tsx.contains("syncLiveContextEntries(next, true)"));
+    assert!(app_tsx.contains("const syncContextEntries = async (next: BackendSettings) =>"));
+    assert_eq!(app_tsx.matches("await syncContextEntries(next)").count(), 3);
+    assert!(app_tsx.contains("if (!(await syncContextEntries(next))) return;"));
     assert!(app_tsx.contains("function contextEntriesWithLiveEntries"));
     assert!(app_tsx.contains("liveByKind"));
     assert!(app_tsx.contains("mergeLiveContextEntries"));
@@ -328,7 +337,7 @@ fn provider_presets_include_runapi() {
     assert!(presets.contains("id: \"runapi\""));
     assert!(presets.contains("name: \"RunAPI\""));
     assert!(presets.contains("category: \"aggregator\""));
-    assert!(presets.contains("baseUrl: \"https://runapi.co/v1\""));
+    assert!(presets.contains("baseUrl: \"https://runapi.host/v1\""));
 }
 
 #[test]

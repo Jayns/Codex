@@ -66,6 +66,7 @@ pub fn run() {
             }
             let main_window = main_window_builder.build()?;
             install_tray(app)?;
+            commands::start_weixin_connect_from_saved_settings();
             register_main_window_events(main_window, startup_is_transient());
             Ok(())
         })
@@ -77,6 +78,14 @@ pub fn run() {
             commands::restart_codex_plus,
             commands::load_settings,
             commands::save_settings,
+            commands::load_grok_config,
+            commands::save_grok_config,
+            commands::weixin_connect_qr_start,
+            commands::weixin_connect_qr_status,
+            commands::weixin_connect_status,
+            commands::weixin_connect_start,
+            commands::weixin_connect_stop,
+            commands::find_desktop_codex_cli,
             commands::dream_skin_status,
             commands::import_dream_skin_image,
             commands::reset_dream_skin_image,
@@ -105,6 +114,9 @@ pub fn run() {
             commands::confirm_pending_provider_import,
             commands::dismiss_pending_provider_import,
             commands::list_local_sessions,
+            commands::import_local_session,
+            commands::load_pending_session_share,
+            commands::import_session_url,
             commands::list_zed_remote_projects,
             commands::open_zed_remote,
             commands::forget_zed_remote_project,
@@ -115,6 +127,7 @@ pub fn run() {
             commands::sync_providers_now,
             commands::load_ads,
             commands::refresh_script_market,
+            commands::refresh_user_script_inventory,
             commands::install_market_script,
             commands::set_user_script_enabled,
             commands::delete_user_script,
@@ -171,7 +184,7 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Opened { urls } = event {
                 for url in urls {
-                    if handle_dream_skin_url(url.as_str()) {
+                    if handle_session_share_url(url.as_str()) || handle_dream_skin_url(url.as_str()) {
                         show_main_window(app_handle);
                     }
                 }
@@ -203,6 +216,28 @@ pub fn handle_dream_skin_url(url: &str) -> bool {
         Err(error) => {
             let _ = codex_plus_core::diagnostic_log::append_diagnostic_log(
                 "manager.dream_skin_link.failed",
+                serde_json::json!({ "error": error.to_string() }),
+            );
+            false
+        }
+    }
+}
+
+pub fn handle_session_share_url(url: &str) -> bool {
+    if !url.starts_with("codexplusplus://session") {
+        return false;
+    }
+    match codex_plus_core::session_share::save_pending_session_share_from_protocol_url(url) {
+        Ok(_) => {
+            let _ = codex_plus_core::diagnostic_log::append_diagnostic_log(
+                "manager.session_share.pending",
+                serde_json::json!({}),
+            );
+            true
+        }
+        Err(error) => {
+            let _ = codex_plus_core::diagnostic_log::append_diagnostic_log(
+                "manager.session_share.failed",
                 serde_json::json!({ "error": error.to_string() }),
             );
             false
