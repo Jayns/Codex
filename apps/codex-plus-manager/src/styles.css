@@ -800,7 +800,7 @@ body {
   text-align: left;
 }
 
-.third-party-import-menu button:last-child {
+.third-party-import-menu button.third-party-import-action {
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
 }
@@ -2135,11 +2135,62 @@ body {
   gap: 10px;
 }
 
+/* MCP 表单和 JSON 导入的模态。
+ *
+ * 默认 modal-card 是 560px，装不下两列的表单字段；表单展开后也可能超出屏幕，
+ * 所以放宽并让正文区自己滚动，头部（标题 + 关闭）保持可见。 */
+.modal-card.context-modal {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(720px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+}
+
+.modal-card.context-modal .context-editor {
+  overflow-y: auto;
+  /* 内联形态才需要顶部分隔线，模态里头部已经分隔过了 */
+  border-top: 0;
+  padding-top: 0;
+}
+
 .context-editor-textarea {
   min-height: 160px;
   font-family: Consolas, "SFMono-Regular", monospace;
   font-size: 12px;
   line-height: 1.45;
+}
+
+/* MCP 表单里的 args / env / headers：一行一项，末尾一个删除按钮。 */
+.mcp-list-field {
+  display: grid;
+  gap: 6px;
+}
+
+.mcp-list-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 键值对多一列：键窄一些，值占剩下的空间。 */
+.mcp-pair-row {
+  grid-template-columns: minmax(0, 0.5fr) minmax(0, 1fr) auto;
+}
+
+/* 「高级：直接编辑 TOML」的展开开关。做成纯文字，别和表单里的实体按钮抢注意力。 */
+.context-advanced-toggle {
+  justify-self: start;
+  border: 0;
+  background: none;
+  padding: 2px 0;
+  color: hsl(var(--muted-foreground));
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.context-advanced-toggle:hover {
+  color: hsl(var(--foreground));
 }
 
 /* 一行一个：两列并排时每个预览都很窄，config.toml 的长行几乎全靠横向滚动 */
@@ -3268,6 +3319,10 @@ body {
   margin-bottom: 12px;
 }
 
+.settings-test-model-field {
+  margin-top: 16px;
+}
+
 .field span,
 .check-row span {
   color: hsl(var(--foreground) / 0.86);
@@ -3704,6 +3759,18 @@ body {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.stepwise-settings-block {
+  --stepwise-control-height: 40px;
+}
+
+.stepwise-settings-block input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+.stepwise-settings-block .app-select-trigger,
+.stepwise-settings-block .field-select,
+.stepwise-settings-block .select-input {
+  height: var(--stepwise-control-height);
+  min-height: var(--stepwise-control-height);
+}
+
 .stepwise-settings-section {
   margin: -4px 0 12px;
   color: hsl(var(--muted-foreground));
@@ -3925,6 +3992,81 @@ input[type="range"]:disabled {
   gap: 12px;
 }
 
+/* Skills 卡片。
+ *
+ * 不复用 .script-market-card：那个卡片是 display:grid 且行高 auto，被同行最高的
+ * 卡片拉伸时多余高度会分摊进每一行，描述框跟着变高，line-clamp 只渲染 3 行但盒子
+ * 更高，overflow:hidden 下面就会露出第 4 行的一小截。这里用 align-content:
+ * space-between，多余空间只落在行与行之间，各行保持自然高度。 */
+.skill-card {
+  display: grid;
+  align-content: space-between;
+  gap: 10px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: hsl(var(--card));
+  padding: 14px;
+  transition:
+    border-color var(--motion-normal) var(--motion-ease),
+    box-shadow var(--motion-normal) var(--motion-ease),
+    transform var(--motion-normal) var(--motion-ease);
+}
+
+.skill-card:hover {
+  border-color: hsl(var(--primary) / 0.36);
+  box-shadow: 0 12px 26px hsl(var(--foreground) / 0.08);
+  transform: translateY(-1px);
+}
+
+.skill-card-title {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.skill-card-title strong {
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+/* 仓库标识可能很长（ComposioHQ/awesome-claude-skills@master），
+ * 让它单行省略，避免换行把卡片撑出参差不齐的高度。 */
+.skill-card-source {
+  overflow: hidden;
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-card-description {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 0;
+  color: hsl(var(--muted-foreground));
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+
+.skill-card-tags,
+.skill-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.skill-card-tag {
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  padding: 2px 8px;
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .script-market-toolbar {
   display: flex;
   align-items: center;
@@ -4104,6 +4246,15 @@ input[type="range"]:disabled {
   align-items: center;
   gap: 12px;
   padding: 12px;
+}
+
+/* 卡片被同行最高的那张拉伸时，多余高度默认会分摊进每一行；描述框跟着变高，
+ * 但 line-clamp 只渲染 3 行，overflow:hidden 下面就露出第 4 行的一小截。
+ * 实测触发条件是行内出现空容器（标签为空时溢出 2.8px），当前 .script-market-tags
+ * 总会渲染 v{version} 所以碰不到，这里是防御性收口。
+ * 顺带把多余空间集中到行间，操作按钮在同一行的卡片间底部对齐。 */
+.script-market-card[data-view="grid"] {
+  align-content: space-between;
 }
 
 .script-market-card:hover {
@@ -4814,7 +4965,7 @@ input[type="range"]:disabled {
 
 .relay-model-row {
   display: grid;
-  grid-template-columns: minmax(220px, 1.6fr) minmax(130px, 0.7fr) minmax(180px, 1fr) 40px;
+  grid-template-columns: minmax(220px, 1.6fr) minmax(130px, 0.7fr) minmax(110px, 0.6fr) minmax(180px, 1fr) 40px 40px;
   align-items: center;
   gap: 8px;
   min-height: var(--relay-control-height);
@@ -4826,11 +4977,74 @@ input[type="range"]:disabled {
   color: hsl(var(--muted-foreground));
   font-size: 12px;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .relay-model-row input {
   min-width: 0;
   font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.relay-model-entry {
+  display: grid;
+  gap: 8px;
+}
+
+.relay-model-import-workbench {
+  display: grid;
+  gap: 10px;
+  grid-column: 1 / -1;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: hsl(var(--surface-sunken));
+  padding: 12px;
+}
+
+.relay-model-import-workbench textarea {
+  min-height: 150px;
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.relay-model-metadata-import-error,
+.relay-model-metadata-import-warning {
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.relay-model-metadata-import-error {
+  color: hsl(var(--destructive));
+  background: hsl(var(--destructive) / 0.08);
+}
+
+.relay-model-metadata-import-warning {
+  color: hsl(var(--warning-foreground, var(--foreground)));
+  background: hsl(var(--warning) / 0.12);
+}
+
+.relay-model-metadata-import-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.relay-model-import-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.relay-model-import-copy span {
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+}
+
+.relay-model-metadata-import-flow {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .relay-model-route-editor {
@@ -5769,6 +5983,15 @@ select {
     grid-template-columns: 1fr;
   }
 
+  .relay-model-metadata-import-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .relay-model-metadata-import-flow {
+    justify-content: flex-start;
+  }
+
   .relay-model-row-head,
   .relay-model-route-head {
     display: none;
@@ -5875,6 +6098,95 @@ select {
 
   .relay-model-list-tools {
     justify-content: flex-start;
+  }
+}
+
+/* ── VLM 测试面板（测试 VLM）────────────────────────────── */
+.vlm-test-entry {
+  grid-column: 1 / -1;
+  margin-top: 10px;
+}
+.vlm-test-panel {
+  grid-column: 1 / -1;
+  max-width: 560px;
+  margin-top: 10px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  padding: 12px;
+}
+.vlm-test-upload {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+  align-items: flex-start;
+}
+.vlm-test-preview {
+  max-width: 100%;
+  max-height: 240px;
+  object-fit: contain;
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+}
+.vlm-test-running {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: hsl(var(--muted-foreground));
+  margin: 0;
+}
+.vlm-test-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.vlm-test-summary {
+  font-weight: 600;
+  margin: 0;
+}
+.vlm-test-description {
+  max-height: 200px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: hsl(var(--muted) / 0.4);
+  border-radius: 6px;
+  padding: 8px;
+  margin: 0;
+  font-size: 12px;
+}
+.vlm-test-detail-toggle {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: hsl(var(--primary));
+  cursor: pointer;
+  padding: 0;
+  font-size: 12px;
+}
+.vlm-test-raw {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.vlm-test-raw .label {
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+}
+.vlm-test-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid hsl(var(--muted));
+  border-top-color: hsl(var(--primary));
+  border-radius: 50%;
+  animation: vlm-test-spin 0.7s linear infinite;
+  vertical-align: middle;
+}
+@keyframes vlm-test-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 

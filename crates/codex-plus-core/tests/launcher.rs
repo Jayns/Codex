@@ -1061,6 +1061,7 @@ async fn launch_lifecycle_keeps_js_injection_in_relay_mode() {
             "select-debug:9229",
             "select-helper:57321",
             "load-settings",
+            "provider-sync",
             "start-helper:57321",
             "launch:9229",
             "inject:9229:57321",
@@ -1102,6 +1103,7 @@ async fn launch_lifecycle_skips_helper_and_injection_when_enhancements_disabled(
             "select-debug:9229",
             "select-helper:57321",
             "load-settings",
+            "provider-sync",
             "launch:9229",
             "status:running",
             "wait-codex",
@@ -1146,7 +1148,7 @@ async fn official_mix_responses_profile_starts_fixed_protocol_proxy_without_enha
 
     let events = events.lock().unwrap().clone();
     assert!(!events.contains(&"remote-control-session-recovery".to_string()));
-    assert!(!events.contains(&"provider-sync".to_string()));
+    assert!(events.contains(&"provider-sync".to_string()));
     assert!(events.contains(&"select-helper:58123".to_string()));
     assert!(events.contains(&"start-helper:57321".to_string()));
     assert!(events.contains(&"shutdown-helper:57321".to_string()));
@@ -1493,6 +1495,7 @@ async fn launch_lifecycle_enters_degraded_mode_and_retries_when_injection_fails(
             "select-debug:9229",
             "select-helper:57321",
             "load-settings",
+            "provider-sync",
             "start-helper:57321",
             "launch:9229",
             "inject:9229:57321",
@@ -1538,6 +1541,7 @@ async fn launch_lifecycle_cleans_helper_when_launch_fails_after_helper_started()
             "select-debug:9229",
             "select-helper:57321",
             "load-settings",
+            "provider-sync",
             "start-helper:57321",
             "launch:9229",
             "shutdown-helper:57321",
@@ -1565,18 +1569,19 @@ async fn launch_starts_helper_when_chat_protocol_proxy_is_enabled() {
             protocol: RelayProtocol::ChatCompletions,
             relay_mode: codex_plus_core::settings::RelayMode::MixedApi,
             official_mix_api_key: false,
+            no_auth: false,
             hide_official_usage_alert: false,
             test_model: String::new(),
             config_contents: String::new(),
             auth_contents: String::new(),
             use_common_config: true,
-            context_selection: codex_plus_core::settings::RelayContextSelection::default(),
-            context_selection_initialized: false,
             context_window: String::new(),
             auto_compact_limit: String::new(),
             model_insert_mode: codex_plus_core::settings::RelayModelInsertMode::default(),
             model_list: String::new(),
             model_windows: String::new(),
+            model_auto_compact: String::new(),
+            model_metadata: String::new(),
             model_vlm: String::new(),
             vlm_api_key: String::new(),
             vlm_model: String::new(),
@@ -1664,7 +1669,17 @@ async fn launch_starts_helper_when_model_routing_is_enabled() {
 
     let before_stop = events.lock().unwrap().clone();
     assert!(before_stop.contains(&"select-helper:58000".to_string()));
+    assert!(before_stop.contains(&"ensure-protocol-proxy-config".to_string()));
     assert!(before_stop.contains(&"start-helper:57321".to_string()));
+    let ensure = before_stop
+        .iter()
+        .position(|event| event == "ensure-protocol-proxy-config")
+        .unwrap();
+    let start = before_stop
+        .iter()
+        .position(|event| event == "start-helper:57321")
+        .unwrap();
+    assert!(ensure < start);
     assert!(!before_stop.contains(&"inject:9229:57321".to_string()));
 
     handle.wait_for_codex_exit().await.unwrap();
@@ -1710,6 +1725,7 @@ async fn launch_lifecycle_cleans_helper_and_codex_when_status_save_fails() {
             "select-debug:9229",
             "select-helper:57321",
             "load-settings",
+            "provider-sync",
             "start-helper:57321",
             "launch:9229",
             "inject:9229:57321",
@@ -1797,6 +1813,7 @@ async fn launch_continues_when_plugin_marketplace_config_fails() {
             "select-debug:9229",
             "select-helper:57321",
             "load-settings",
+            "provider-sync",
             "plugin-marketplace",
             "start-helper:57321",
             "launch:9229",
@@ -2002,6 +2019,14 @@ impl LaunchHooks for FakeHooks {
             return Ok(());
         }
         self.event("apply-relay");
+        Ok(())
+    }
+
+    async fn ensure_active_protocol_proxy_config(
+        &self,
+        _settings: &BackendSettings,
+    ) -> anyhow::Result<()> {
+        self.event("ensure-protocol-proxy-config");
         Ok(())
     }
 

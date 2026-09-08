@@ -473,7 +473,7 @@
   const codexThreadServiceTierMaxEntries = 120;
   const codexThreadServiceTierDraftBindWindowMs = 60 * 1000;
   const codexServiceTierRequestOverrideVersion = "9";
-  const codexAppServerModelRequestPatchVersion = "6";
+  const codexAppServerModelRequestPatchVersion = "7";
   const codexRemoteSessionRecoveryVersion = "5";
   const codexPluginMarketplaceUnlockVersion = "15";
   const codexThreadScrollMaxEntries = 120;
@@ -1214,7 +1214,7 @@
       .codex-plus-ad-link { display: inline-flex; align-items: center; justify-content: center; border-radius: 9px; background: #2563eb; color: #ffffff; font-size: 13px; font-weight: 650; text-decoration: none; padding: 8px 12px; }
       .codex-plus-ad-empty { border: 1px dashed rgba(255,255,255,.16); border-radius: 12px; color: #9ca3af; font-size: 13px; padding: 12px; text-align: center; }
       /* Keep injected surfaces on Codex's own semantic palette in both themes. */
-      :root, :where(.${moreMenuClass}, .${actionTooltipClass}, .${zedRemoteToastClass}, .codex-delete-toast, .codex-delete-confirm-overlay, .codex-plus-modal-overlay, .${codexPlusPageClass}) {
+      :root {
         --codex-plus-bg-primary: var(--color-token-bg-primary, var(--token-bg-primary, #fff));
         --codex-plus-bg-secondary: var(--color-token-bg-secondary, var(--token-bg-secondary, #f7f7f7));
         --codex-plus-bg-elevated: var(--color-token-dropdown-background, var(--color-token-bg-elevated-secondary, var(--codex-plus-bg-primary)));
@@ -1230,6 +1230,8 @@
         --codex-plus-danger-bg: var(--color-background-danger-soft, rgba(220,38,38,.1));
         --codex-plus-success: var(--color-text-success, #15803d);
         --codex-plus-warning: var(--color-text-warning, #a16207);
+      }
+      :where(.${moreMenuClass}, .${actionTooltipClass}, .${zedRemoteToastClass}, .codex-delete-toast, .codex-delete-confirm-overlay, .codex-plus-modal-overlay, .${codexPlusPageClass}) {
         color: var(--codex-plus-text);
         font-family: inherit;
       }
@@ -1396,7 +1398,7 @@
   }
 
   function defaultCodexPlusSettings() {
-    return { pluginMarketplaceUnlock: true, modelWhitelistUnlock: true, sessionDelete: true, markdownExport: true, pasteFix: false, threadIdBadge: false, conversationView: false, conversationViewMaxWidth: conversationViewDefaultWidth, threadScrollRestore: true, zedRemoteOpen: true, upstreamWorktreeCreate: true, nativeMenuPlacement: true, serviceTierControls: false, petRealMouseLook: false, stepwise: false, dreamSkinEnabled: false, dreamSkinPaused: false, dreamSkinThemeConfig: window.__CODEX_PLUS_DREAM_SKIN_THEME__ || {}, dreamSkinImagePath: "" };
+    return { pluginMarketplaceUnlock: true, modelWhitelistUnlock: true, sessionDelete: true, markdownExport: true, pasteFix: false, threadIdBadge: false, conversationView: false, conversationViewMaxWidth: conversationViewDefaultWidth, threadScrollRestore: true, zedRemoteOpen: true, upstreamWorktreeCreate: true, nativeMenuPlacement: true, serviceTierControls: false, petRealMouseLook: false, stepwise: false, answerOutline: false, dreamSkinEnabled: false, dreamSkinPaused: false, dreamSkinThemeConfig: window.__CODEX_PLUS_DREAM_SKIN_THEME__ || {}, dreamSkinImagePath: "" };
   }
 
   const codexPlusBackendSettingMap = {
@@ -1413,6 +1415,7 @@
     serviceTierControls: "codexAppServiceTierControls",
     petRealMouseLook: "codexAppPetRealMouseLook",
     stepwise: "codexAppStepwiseEnabled",
+    answerOutline: "codexAppAnswerOutlineEnabled",
     pasteFix: "codexAppPasteFix",
     dreamSkinEnabled: "codexAppDreamSkinEnabled",
     dreamSkinPaused: "codexAppDreamSkinPaused",
@@ -1451,6 +1454,7 @@
         serviceTierControls: false,
         petRealMouseLook: false,
         stepwise: false,
+        answerOutline: false,
         dreamSkinEnabled: false,
         dreamSkinPaused: false,
         dreamSkinThemeConfig: window.__CODEX_PLUS_DREAM_SKIN_THEME__ || {},
@@ -2217,9 +2221,10 @@
     const backendKey = codexPlusBackendSettingMap[key];
     if (backendKey) {
       if (key === "stepwise") syncStepwisePanel(value);
+      if (key === "answerOutline") syncStepwisePanel(undefined, value);
       void setBackendSetting(backendKey, value).then(() => {
-        if (key === "stepwise") {
-          Promise.resolve(window.__codexStepwisePanel?.loadSettings?.()).then(() => syncStepwisePanel(value));
+        if (key === "stepwise" || key === "answerOutline") {
+          Promise.resolve(window.__codexStepwisePanel?.loadSettings?.()).then(() => syncStepwisePanel());
         }
       }).catch(() => {
         void loadBackendSettings();
@@ -2258,9 +2263,15 @@
     scan();
   }
 
-  function syncStepwisePanel(enabled = codexPlusSettings().stepwise) {
+  function syncStepwisePanel(
+    enabled = codexPlusSettings().stepwise,
+    answerOutlineEnabled = codexPlusSettings().answerOutline
+  ) {
     try {
-      window.__codexStepwisePanel?.syncSettings?.({ enabled: !!enabled });
+      window.__codexStepwisePanel?.syncSettings?.({
+        enabled: !!enabled,
+        answerOutlineEnabled: !!answerOutlineEnabled,
+      });
     } catch (error) {
       sendCodexPlusDiagnostic("stepwise_sync_failed", {
         errorName: error?.name || "",
@@ -2401,6 +2412,10 @@
   const codexServiceTierSupportedFastModels = new Set(["gpt-5.4", "gpt-5.5"]);
   const codexThreadServiceTierModes = new Set(["inherit", "standard", "fast"]);
   const codexServiceTierControlModes = new Set(["inherit", "global-standard", "global-fast", "custom"]);
+  // 这里只放确认支持 priority service tier 的官方模型——这个集合同时用于生成
+  // 「Fast 仅支持 …」的提示文案，塞进没验证过的模型等于对用户做出错误承诺。
+  // 第三方模型（deepseek 等）走下面 codexServiceTierFastSupportedForModel 里的
+  // 模型元数据判定：上游自己声明了 priority 才认。
   ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"].forEach((model) => codexServiceTierSupportedFastModels.add(model));
 
   function uniqueCodexAppAssetUrls(urls) {
@@ -2684,7 +2699,17 @@
   }
 
   function codexServiceTierFastSupportedForModel(modelName) {
-    return codexServiceTierSupportedFastModels.has(normalizeCodexServiceTierModelName(modelName));
+    const normalized = normalizeCodexServiceTierModelName(modelName);
+    if (!normalized) return false;
+    if (codexServiceTierSupportedFastModels.has(normalized)) return true;
+    // 不按名字猜：模型叫 deepseek 不代表它的中转站支持 priority tier。
+    // 只认上游模型元数据里明确声明的 priority。
+    try {
+      const metadata = typeof codexPlusModelMetadata === "function" ? codexPlusModelMetadata(modelName) : null;
+      if (metadata && Array.isArray(metadata.serviceTiers) && metadata.serviceTiers.some((t) => String(t.id || t).toLowerCase() === "priority")) return true;
+    } catch {}
+    // removed blanket apikey fallback to keep test contract (FAST only for known models)
+    return false;
   }
 
   function codexServiceTierFastUnsupportedMessage(modelName = codexServiceTierCurrentModelName()) {
@@ -3284,23 +3309,43 @@
     return codexRemoteSessionProviderNormalizationEnabled();
   }
 
+  function codexRelayConfigModelProvider(configContents) {
+    const text = String(configContents || "");
+    const match = /(?:^|\n)\s*model_provider\s*=\s*["']([^"'\n]+)["']/m.exec(text);
+    return match ? String(match[1]).trim() : "";
+  }
+
   function codexRemoteSessionTargetProvider() {
     const profile = codexRemoteSessionActiveProfile();
-    if (String(profile?.relayMode || "") === "pureApi") return "custom";
+    const relayMode = String(profile?.relayMode || "");
+    // 解析中继实际写进 config.toml 的 model_provider（比如
+    // `model_provider = "deepseek"` 配 [model_providers.deepseek]），而不是
+    // 假定每个 pureApi 中继都叫 "custom"——那会让恢复会话报
+    // "Model provider `custom` not found"。
+    //
+    // 顺序上先看 profile.configContents 再看 activeRelayCodexProvider：后者是
+    // 全局缓存，切换供应商后可能还是上一个的值；profile 是当前这次调用现取的，
+    // 更可信。反过来会让 pureApi 恢复会话拿到陈旧 provider。
+    const fromConfig = codexRelayConfigModelProvider(profile?.configContents || "");
+    if (fromConfig) return fromConfig;
+    // pureApi 且 profile 自己没声明供应方时回到 "custom"，不去读可能陈旧的全局缓存。
+    if (relayMode === "pureApi") return "custom";
     return String(
       codexPlusBackendSettings.activeRelayCodexProvider
       || codexModelCatalog?.codex_model_provider
       || codexModelCatalog?.codexModelProvider
       || codexModelCatalog?.model_provider
       || codexModelCatalog?.modelProvider
+      || (String(profile?.relayMode || "") === "pureApi" ? "custom" : "")
       || ""
     ).trim();
   }
 
   function codexRemoteSessionProviderRequestMethod(method) {
+    // app-server restores persisted model/provider/reasoning for thread/resume only
+    // when the caller supplies none of those overrides.
     return [
       "thread/start",
-      "thread/resume",
       "start-conversation",
       "start-thread-for-host",
       "thread-prewarm-start",
@@ -3316,8 +3361,7 @@
     if (!params || typeof params !== "object" || Array.isArray(params)) return params;
     const profile = codexRemoteSessionActiveProfile();
     const pureApi = String(profile?.relayMode || "") === "pureApi";
-    const isExtendedPureApiRequest = requestMethod === "thread/resume" || requestMethod === "turn/start";
-    if (isExtendedPureApiRequest && !pureApi) return params;
+    if (requestMethod === "turn/start" && !pureApi) return params;
     const hasModelProvider = Object.prototype.hasOwnProperty.call(params, "modelProvider")
       || Object.prototype.hasOwnProperty.call(params, "model_provider");
     if (requestMethod === "turn/start" && !hasModelProvider) return params;
@@ -3701,6 +3745,72 @@
     serviceTierDispatcherPatchPromise = patch();
   }
 
+  // --- Dictation / Voice patch for apikey (ported from v1.2.34 preload) ---
+  const codexDictationSupportVersion = "1";
+  function codexDictationSupportModuleCandidates() {
+    const prefixes = ["use-is-dictation-supported-", "use-dictation-", "app-initial-", "setting-storage-", "vscode-api-"];
+    return prefixes;
+  }
+  async function installDictationSupportPatch() {
+    if (window.__codexDictationSupportPatched === codexDictationSupportVersion) return;
+    for (const prefix of codexDictationSupportModuleCandidates()) {
+      try {
+        const module = await loadOptionalCodexAppModule(prefix);
+        if (!module) continue;
+        for (const key of Object.keys(module)) {
+          const fn = module[key];
+          if (typeof fn !== "function") continue;
+          let src = "";
+          try { src = String(fn); } catch {}
+          if (!src.includes("authMethod") || !src.includes("chatgpt")) continue;
+          if (fn.__codexDictationPatched === codexDictationSupportVersion) continue;
+          const original = fn;
+          const wrapped = function(...args) {
+            try {
+              const result = original.apply(this, args);
+              if (result === false) {
+                const hasApikey = args.some(arg => arg && typeof arg === "object" && (arg.authMethod === "apikey" || arg.authMethod === "apiKey"));
+                if (hasApikey) return true;
+                if (typeof codexPlusSettings === "function" && codexPlusSettings().serviceTierControls) return true;
+              }
+              return result;
+            } catch (e) {
+              return original.apply(this, args);
+            }
+          };
+          wrapped.__codexDictationPatched = codexDictationSupportVersion;
+          try { module[key] = wrapped; } catch {}
+          sendCodexPlusDiagnostic("dictation_support_patched", { prefix, key, version: codexDictationSupportVersion });
+          window.__codexDictationSupportPatched = codexDictationSupportVersion;
+          return;
+        }
+      } catch {}
+    }
+    // Fallback: DOM enforcement for voice button when module patch not found
+    try {
+      if (!window.__codexDictationDomPatched) {
+        window.__codexDictationDomPatched = true;
+        const enforceVoice = () => {
+          const selectors = ['button[aria-label*="Voice"]','button[aria-label*="Dictation"]','button[aria-label*="voice"]','[data-testid*="voice"]','[data-testid*="dictation"]','button:has(svg)'];
+          // generic: find buttons with microphone icon
+          document.querySelectorAll('button').forEach(btn => {
+            const label = (btn.getAttribute("aria-label") || btn.textContent || "").toLowerCase();
+            if (label.includes("voice") || label.includes("dictation") || label.includes("microphone") || label.includes("mic")) {
+              if (btn.hasAttribute("disabled")) {
+                btn.removeAttribute("disabled");
+                btn.setAttribute("aria-disabled","false");
+                btn.style.opacity = "";
+                btn.style.pointerEvents = "";
+              }
+            }
+          });
+        };
+        setInterval(enforceVoice, 1500);
+        enforceVoice();
+      }
+    } catch {}
+  }
+
   async function loadBackendSettingsState() {
     const seq = codexPlusBackendSettingsSeq;
     try {
@@ -3774,7 +3884,7 @@
     if (codexPlusBackendStatus.version) {
       codexPlusVersion = codexPlusBackendStatus.version;
       document.querySelectorAll("[data-codex-plus-version]").forEach((node) => {
-        node.textContent = `Codex++ ${codexPlusVersion}`;
+        node.textContent = `Codex ${codexPlusVersion}`;
       });
     }
     const label = document.querySelector("[data-codex-backend-status]");
@@ -4086,7 +4196,7 @@
     overlay.innerHTML = `
       <div class="codex-plus-modal-content" role="dialog" aria-modal="true" aria-label="Codex++">
         <div class="codex-plus-modal-header">
-          <div class="codex-plus-modal-title"><span class="codex-plus-backend-indicator" data-codex-backend-indicator="true" data-status="checking"></span><span data-codex-plus-version="true">Codex++ ${codexPlusVersion}</span></div>
+          <div class="codex-plus-modal-title"><span class="codex-plus-backend-indicator" data-codex-backend-indicator="true" data-status="checking"></span><span data-codex-plus-version="true">Codex ${codexPlusVersion}</span></div>
           <button type="button" class="codex-plus-modal-close" aria-label="${pageMode ? "返回" : "关闭"}">${pageMode ? "返回" : "×"}</button>
         </div>
         <div class="codex-plus-tabs" role="tablist" aria-label="Codex++">
@@ -4101,6 +4211,10 @@
               <div class="codex-plus-backend-status">
                 <div class="codex-plus-backend-label" data-codex-backend-status="true" data-status="checking">正在检查后端…</div>
               </div>
+            </div>
+            <div class="codex-plus-row" hidden>
+              <div><div class="codex-plus-row-title">打开皮肤管理</div><div class="codex-plus-row-description">启动皮肤管理工具，切换或自定义 Dream Skin 主题。</div></div>
+              <button type="button" class="codex-plus-action-button" data-codex-open-manager="true">打开皮肤管理</button>
             </div>
             <div class="codex-plus-row">
               <div><div class="codex-plus-row-title">Codex增强</div><div class="codex-plus-row-description">关闭后停用删除、导出、插件相关和菜单位置增强。</div></div>
@@ -4123,8 +4237,12 @@
               <button type="button" class="codex-plus-toggle" data-codex-plus-setting="petRealMouseLook"><span></span></button>
             </div>` : ""}
             <div class="codex-plus-row">
-              <div><div class="codex-plus-row-title">Stepwise</div><div class="codex-plus-row-description">在当前 Codex 页面显示可拖动的下一步建议浮层，可在设置页配置模型和直接发送。启停后需重启 Codex++ 生效。</div></div>
+              <div><div class="codex-plus-row-title">悬浮球 · Stepwise</div><div class="codex-plus-row-description">生成下一步建议。</div></div>
               <button type="button" class="codex-plus-toggle" data-codex-plus-setting="stepwise"><span></span></button>
+            </div>
+            <div class="codex-plus-row">
+              <div><div class="codex-plus-row-title">悬浮球 · 回答大纲</div><div class="codex-plus-row-description">整理回答结构。</div></div>
+              <button type="button" class="codex-plus-toggle" data-codex-plus-setting="answerOutline"><span></span></button>
             </div>
             <div class="codex-plus-row" data-codex-service-tier-controls="true">
               <div><div class="codex-plus-row-title">服务模式</div><div class="codex-plus-row-description">继承优先读取 Codex 应用内设置，其次读取 config.toml 的 service_tier；全局模式覆盖全部 thread；自定义允许按 thread 覆盖。</div></div>
@@ -4187,27 +4305,11 @@
               <button type="button" class="codex-plus-toggle" data-codex-backend-setting="providerSyncEnabled"><span></span></button>
             </div>
             <div class="codex-plus-row">
-              <div><div class="codex-plus-row-title">页面增强模式</div><div class="codex-plus-row-description">${codexPlusBackendSettings.launchMode === "relay" ? "兼容增强：保留会话删除、导出和用户脚本，仅关闭插件市场相关增强。" : "完整增强：加载插件市场、会话管理等全部页面能力。"}</div></div>
-              <button type="button" class="codex-plus-action-button" data-codex-open-manager="true">打开管理工具</button>
-            </div>
-            <div class="codex-plus-row">
               <div><div class="codex-plus-row-title">打开 DevTools</div><div class="codex-plus-row-description">打开当前 Codex 页面开发者工具，方便查看用户脚本报错。</div></div>
               <button type="button" class="codex-plus-action-button" data-codex-open-devtools="true">打开 DevTools</button>
             </div>
-            <div class="codex-plus-row">
+            <div class="codex-plus-row" hidden>
               <div><div class="codex-plus-row-title">关于 Codex++</div><div class="codex-plus-about">Codex++ 是通过外部 launcher 注入的增强菜单，不修改 Codex App 原始安装文件。<br>Build: <span data-codex-plus-build="true">${codexPlusBuild}</span><br>GitHub: <a href="https://github.com/BigPizzaV3/CodexPlusPlus" target="_blank" rel="noreferrer">https://github.com/BigPizzaV3/CodexPlusPlus</a><br>Discord: <a href="https://discord.gg/y96kX7A76v" target="_blank" rel="noreferrer">https://discord.gg/y96kX7A76v</a><br>Telegram: <a href="https://t.me/CodexPlusPlus" target="_blank" rel="noreferrer">https://t.me/CodexPlusPlus</a></div></div>
-            </div>
-            <div class="codex-plus-row">
-              <div><div class="codex-plus-row-title">Discord 社区</div><div class="codex-plus-row-description">加入 Discord 获取更新消息、反馈问题或交流使用体验。</div></div>
-              <button type="button" class="codex-plus-action-button" data-codex-plus-discord="true">打开 Discord</button>
-            </div>
-            <div class="codex-plus-row">
-              <div><div class="codex-plus-row-title">Telegram 频道</div><div class="codex-plus-row-description">加入 Telegram 获取更新消息和交流使用体验。</div></div>
-              <button type="button" class="codex-plus-action-button" data-codex-plus-telegram="true">打开 Telegram</button>
-            </div>
-            <div class="codex-plus-row">
-              <div><div class="codex-plus-row-title">提出问题</div><div class="codex-plus-row-description">打开 GitHub Issues 反馈问题或建议。</div></div>
-              <button type="button" class="codex-plus-issue-button" data-codex-plus-issue="true">提出问题</button>
             </div>
           </div>
           <div class="codex-plus-panel" data-codex-plus-panel="userScripts" hidden>
@@ -4239,6 +4341,7 @@
       event.preventDefault();
       event.stopPropagation();
       overlay.remove();
+      if (pageMode) setCodexPlusSidebarNavActive(false);
     }, true);
     overlay.addEventListener("input", (event) => {
       const target = event.target instanceof Element ? event.target : event.target?.parentElement;
@@ -4379,6 +4482,26 @@
     setCodexPlusSidebarNavActive(false);
   }
 
+  function closeCodexPlusPageAfterNativeNavigation() {
+    clearTimeout(window.__codexPlusPageNavigationCloseTimer);
+    window.__codexPlusPageNavigationCloseTimer = setTimeout(() => {
+      window.__codexPlusPageNavigationCloseTimer = null;
+      closeCodexPlusPage();
+    }, 0);
+  }
+
+  function installCodexPlusPageNavigationCloseHandler() {
+    document.removeEventListener("click", window.__codexPlusPageNavigationCloseHandler, true);
+    window.__codexPlusPageNavigationCloseHandler = (event) => {
+      if (!document.querySelector(`.${codexPlusPageClass}`)) return;
+      const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+      if (!target?.closest(selectors.sidebarThread)) return;
+      // Let Codex's own click handler update its route before removing our page.
+      closeCodexPlusPageAfterNativeNavigation();
+    };
+    document.addEventListener("click", window.__codexPlusPageNavigationCloseHandler, true);
+  }
+
   function installCodexPlusSidebarNavigation() {
     document.querySelectorAll(`#${codexPlusMenuId}, [data-codex-plus-menu="true"]`).forEach((node) => node.remove());
     const navigation = document.querySelector('aside.app-shell-left-panel nav[role="navigation"], nav[role="navigation"]');
@@ -4398,7 +4521,7 @@
       navigation.addEventListener("click", (event) => {
         const target = event.target instanceof Element ? event.target : event.target?.parentElement;
         if (target?.closest(`#${codexPlusSidebarNavId}`)) return;
-        if (target?.closest("button, a")) closeCodexPlusPage();
+        if (target?.closest("button, a")) closeCodexPlusPageAfterNativeNavigation();
       }, true);
     }
     let wrapper = document.getElementById(codexPlusSidebarNavId);
@@ -4514,7 +4637,10 @@
     if (name === "openai-curated") return "OpenAI插件2(Codex++)";
     if (name === "openai-primary-runtime") return "OpenAI插件3(Codex++)";
     if (name === "openai-api-curated") return "OpenAI插件4(Codex++)";
-    if (name === "openai-curated-remote") return "OpenAI插件5(Codex++)";
+    // 内置插件包的注册名。曾经叫 openai-curated-remote，但那是 codex 的保留名，
+    // 注册在它下面会被静默忽略，已改为 codex-plus-curated；旧名保留以兼容
+    // 尚未升级的配置。
+    if (name === "codex-plus-curated" || name === "openai-curated-remote") return "OpenAI插件5(Codex++)";
     return fallback;
   }
 
@@ -6421,9 +6547,17 @@
   function modelReasoningEfforts(modelName) {
     const supported = codexPlusModelMetadata(modelName)?.supportedReasoningEfforts;
     if (Array.isArray(supported) && supported.length > 0) {
-      return supported.map((entry) => ({ ...entry }));
+      const efforts = supported.map((entry) => ({ ...entry }));
+      const hasMax = efforts.some((e) => e.reasoningEffort === "max");
+      const hasUltra = efforts.some((e) => e.reasoningEffort === "ultra");
+      if (!hasMax) efforts.push({ reasoningEffort: "max", description: "Maximum reasoning depth for the hardest problems" });
+      if (!hasUltra) {
+        const shouldAddUltra = /sol|terra|gpt-5\.6|gpt-5\.5|gpt-5\.4|deepseek/i.test(String(modelName || ""));
+        if (shouldAddUltra || efforts.length >= 4) efforts.push({ reasoningEffort: "ultra", description: "Maximum reasoning with automatic task delegation" });
+      }
+      return efforts;
     }
-    return ["low", "medium", "high", "xhigh"].map((reasoningEffort) => ({ reasoningEffort, description: `${reasoningEffort} effort` }));
+    return ["low", "medium", "high", "xhigh", "max", "ultra"].map((reasoningEffort) => ({ reasoningEffort, description: `${reasoningEffort} effort` }));
   }
 
   function applyCodexPlusModelMetadata(descriptor, modelName) {
@@ -6456,7 +6590,7 @@
       displayName: metadata?.displayName || modelName,
       description: metadata?.description || codexModelCatalog.provider_name || codexModelCatalog.model_provider || "Custom model",
       hidden: false,
-      isDefault: (codexModelCatalog.default_model || codexModelCatalog.model) === modelName,
+      isDefault: false,
       defaultReasoningEffort: metadata?.defaultReasoningEffort || "medium",
       supportedReasoningEfforts: modelReasoningEfforts(modelName),
     };
@@ -6565,12 +6699,72 @@
       value.hidden_models = value.hidden_models.filter((name) => !names.includes(name));
       if (value.hidden_models.length !== before) changed = true;
     }
-    if (value.defaultModel == null && names.length > 0) {
-      value.defaultModel = codexPlusModelDescriptor(names[0]);
-      changed = true;
-    } else if (typeof value.defaultModel === "string" && names.includes(value.defaultModel) && value.model == null) {
-      value.model = value.defaultModel;
-      changed = true;
+    return changed;
+  }
+
+  function reactFiberKeys(element) {
+    return Object.keys(element).filter((key) => key.startsWith("__reactFiber") || key.startsWith("__reactInternalInstance") || key.startsWith("__reactProps"));
+  }
+
+  function isWorkspaceChromeNode(node) {
+    if (!node || node.nodeType !== 1) return false;
+    if (node.closest?.('[data-app-action-sidebar-section-heading="Chats"], [data-app-action-sidebar-section-heading="Projects"], [data-app-action-sidebar-thread-id], [data-app-action-sidebar-project-row], [data-app-action-sidebar-project-id]')) {
+      return false;
+    }
+    return !!node.closest?.("main aside");
+  }
+
+  // Scoped, model-only re-implementation of the object-graph walker Codex++
+  // used to run over document.body's entire React fiber tree on every popup
+  // (removed upstream for being too broad — it could mutate any object
+  // reachable from body, not just model-related ones). This variant is only
+  // ever invoked on freshly-added popup/menu/listbox DOM nodes (never
+  // document.body), and only follows React's own fiber-shaped properties
+  // (child/sibling/return/memoized*) instead of every enumerable property —
+  // it can't wander into unrelated app state the old version could reach.
+  const MODEL_POPUP_FIBER_PROPERTY_KEYS = ["memoizedProps", "memoizedState", "pendingProps", "child", "sibling", "return"];
+
+  function patchModelPopupObjectGraph(root, visited, depth = 0) {
+    if (!root || typeof root !== "object" || visited.has(root) || depth > 6) return false;
+    visited.add(root);
+    let changed = patchModelContainer(root);
+    for (const key of MODEL_POPUP_FIBER_PROPERTY_KEYS) {
+      const value = root[key];
+      if (value && typeof value === "object" && patchModelPopupObjectGraph(value, visited, depth + 1)) changed = true;
+    }
+    const children = root.memoizedProps?.children;
+    if (Array.isArray(children)) {
+      children.forEach((child) => {
+        if (child && typeof child === "object" && patchModelPopupObjectGraph(child, visited, depth + 1)) changed = true;
+      });
+    }
+    return changed;
+  }
+
+  function modelPopupNodesFromMutations(mutations) {
+    if (!mutations) return [];
+    const selector = "[role='menu'], [role='listbox']";
+    const nodes = [];
+    mutations.forEach((mutation) => {
+      [...mutation.addedNodes].forEach((node) => {
+        if (node.nodeType !== 1 || isWorkspaceChromeNode(node)) return;
+        if (node.matches?.(selector) && !nodes.includes(node)) nodes.push(node);
+        node.querySelectorAll?.(selector).forEach((match) => {
+          if (!isWorkspaceChromeNode(match) && !nodes.includes(match)) nodes.push(match);
+        });
+      });
+    });
+    return nodes;
+  }
+
+  function patchModelPopupNodes(nodes) {
+    if (!codexPlusModelUnlockEnabled() || !codexPlusModelNames().length || !nodes.length) return false;
+    const visited = new WeakSet();
+    let changed = false;
+    for (const node of nodes.slice(0, 20)) {
+      for (const key of reactFiberKeys(node)) {
+        if (patchModelPopupObjectGraph(node[key], visited)) changed = true;
+      }
     }
     return changed;
   }
@@ -6638,12 +6832,8 @@
         changed = true;
       }
     });
-    const nextValue = {
-      ...value,
-      available_models: availableModels,
-      default_model: names[0] || value.default_model,
-    };
-    if (!changed && nextValue.default_model === value.default_model) return config;
+    if (!changed) return config;
+    const nextValue = { ...value, available_models: availableModels };
     try {
       config.value = nextValue;
     } catch {
@@ -6753,11 +6943,61 @@
     return result;
   }
 
+  function codexPerModelContextEnabled() {
+    const profile = codexRemoteSessionActiveProfile();
+    if (!profile) return false;
+    return [profile.modelWindows, profile.modelAutoCompact, profile.modelMetadata]
+      .some((value) => typeof value === "string" && value.trim() && value.trim() !== "{}");
+  }
+
+  function codexThreadModelRequestState(method, params, result) {
+    const requestMethod = String(method || "");
+    const threadId = String(
+      params?.threadId
+      || params?.conversationId
+      || result?.thread?.id
+      || result?.threadId
+      || ""
+    ).trim();
+    const model = String(params?.model || result?.thread?.model || "").trim();
+    return { requestMethod, threadId, model };
+  }
+
+  async function refreshCodexThreadModelBeforeTurn(client, originalSendRequest, method, params, options) {
+    if (String(method || "") !== "turn/start" || !codexPerModelContextEnabled()) return null;
+    const { threadId, model } = codexThreadModelRequestState(method, params);
+    if (!threadId || !model) return null;
+    const previousModel = client.__codexPlusThreadModels?.get(threadId) || "";
+    if (!previousModel || previousModel === model) return null;
+    let resumeParams = { threadId, model };
+    resumeParams = applyCodexRemoteSessionProviderOverride("thread/resume", resumeParams);
+    try {
+      await originalSendRequest("thread/resume", resumeParams, options);
+      client.__codexPlusThreadModels.set(threadId, model);
+      sendCodexPlusDiagnostic("thread_model_context_refreshed", {
+        threadId,
+        from: previousModel,
+        to: model,
+      });
+      return true;
+    } catch (error) {
+      sendCodexPlusDiagnostic("thread_model_context_refresh_failed", {
+        threadId,
+        from: previousModel,
+        to: model,
+        errorName: error?.name || "",
+        errorMessage: error?.message || String(error),
+      });
+      return false;
+    }
+  }
+
   function patchAppServerModelRequestClient(client) {
     if (!client || typeof client.sendRequest !== "function") return false;
     if (client.__codexPlusModelRequestPatch === codexAppServerModelRequestPatchVersion) return true;
     const originalSendRequest = client.__codexPlusModelOriginalSendRequest || client.sendRequest.bind(client);
     client.__codexPlusModelOriginalSendRequest = originalSendRequest;
+    client.__codexPlusThreadModels = client.__codexPlusThreadModels || new Map();
     client.sendRequest = async function codexPlusModelPatchedSendRequest(method, params, options) {
       const requestMethod = appServerModelRequestMethod(String(method || ""), params);
       let providerRefreshFailed = false;
@@ -6777,7 +7017,19 @@
       const nextParams = providerRefreshFailed
         ? params
         : applyCodexRemoteSessionProviderOverride(requestMethod, params);
+      const modelContextRefresh = await refreshCodexThreadModelBeforeTurn(
+        client,
+        originalSendRequest,
+        method,
+        nextParams,
+        options
+      );
       const result = await originalSendRequest(method, nextParams, options);
+      const threadState = codexThreadModelRequestState(requestMethod, nextParams, result);
+      if (modelContextRefresh !== false && threadState.threadId && threadState.model
+          && ["thread/start", "thread/resume", "turn/start"].includes(threadState.requestMethod)) {
+        client.__codexPlusThreadModels.set(threadState.threadId, threadState.model);
+      }
       if (!codexPlusModelUnlockEnabled()) return result;
       if (!codexPlusModelNames().length) await loadCodexModelCatalog();
       return patchAppServerModelResult(requestMethod, result);
@@ -6883,6 +7135,7 @@
         || (codexPlusBackendSettingsLoaded && codexRemoteSessionProviderPatchEnabled())) {
       installAppServerModelRequestPatch();
     }
+    void installDictationSupportPatch();
     if (!codexPlusModelUnlockEnabled()) return;
     installModelJsonResponsePatch();
     patchAppServerModelMessages();
@@ -6922,6 +7175,8 @@
       return;
     }
     runCodexModelWhitelistRefreshPass();
+    const popupNodes = modelPopupNodesFromMutations(mutations);
+    if (popupNodes.length) patchModelPopupNodes(popupNodes);
   }
 
   function threadIdVariants(sessionId) {
@@ -9239,6 +9494,7 @@
       );
     }
     installCodexPlusSidebarNavigation();
+    installCodexPlusPageNavigationCloseHandler();
     installSessionShareImportListener();
     localizeCodexMenus();
     scheduleBackendHeartbeat();
@@ -10206,6 +10462,7 @@
   }
 
   function scan() {
+    void installDictationSupportPatch();
     runScanStep(scanLightweight);
     requestAnimationFrame(() => runScanStep(scanDeferred));
   }
@@ -10292,10 +10549,41 @@
     window.__codexSessionDeleteScanTimer = setTimeout(runScheduledScan, 200);
   }
 
+  /**
+   * 侧边栏入口的启动补扫。
+   *
+   * 注入永远早于 Codex 把左侧面板渲染出来：注入那一刻 readyState 已是 complete，
+   * 但 aside.app-shell-left-panel 还不存在（实测 anyNav: 0），所以首次 scan 里的
+   * installCodexPlusSidebarNavigation 必然走 `if (!navigation) return`。
+   *
+   * 之后全靠 MutationObserver 观察到侧边栏挂载再补一次，实测要 2.6~3.1 秒。
+   * 但那把入口的出现押在了单次 DOM 变更上——那次变更若被 shouldScheduleScan
+   * 过滤掉，就没有下一次触发，入口会一直缺失到用户手动操作产生新的变更为止。
+   *
+   * 这里加一个不依赖 DOM 事件的有界重试作为兜底：插上就停，超时就放弃，
+   * 不留常驻定时器，也不影响 observer 那条正常路径。
+   */
+  function scheduleSidebarNavStartupRetry() {
+    clearInterval(window.__codexPlusSidebarNavRetryTimer);
+    let attempts = 0;
+    window.__codexPlusSidebarNavRetryTimer = setInterval(() => {
+      attempts += 1;
+      if (document.getElementById(codexPlusSidebarNavId) || attempts > 20) {
+        clearInterval(window.__codexPlusSidebarNavRetryTimer);
+        window.__codexPlusSidebarNavRetryTimer = null;
+        return;
+      }
+      try {
+        installCodexPlusSidebarNavigation();
+      } catch {}
+    }, 300);
+  }
+
   void loadBackendSettingsForStartup();
   installUpstreamBranchDropdownAdapter();
   installUpstreamWorktreeNativeAdapter();
   scan();
+  scheduleSidebarNavStartupRetry();
   window.removeEventListener("resize", window.__codexPlusResizeHandler);
   let codexPlusResizeRafId = 0;
   window.__codexPlusResizeHandler = () => {

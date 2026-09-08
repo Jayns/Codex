@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{Manager, WindowEvent};
+use tauri::{Emitter, Manager, WindowEvent};
 
 const TRAY_ID: &str = "codex_plus_tray";
 
@@ -14,6 +14,7 @@ const TRAY_MENU_SHOW: &str = "tray_show_main";
 const TRAY_MENU_DREAM_SKIN_APPLY: &str = "tray_apply_dream_skin";
 const TRAY_MENU_QUIT: &str = "tray_quit_app";
 const DREAM_SKIN_DEBUG_PORT: u16 = 9229;
+const MANAGER_NAVIGATION_EVENT: &str = "manager-navigation-requested";
 
 pub fn run() {
     install_panic_logger();
@@ -73,11 +74,13 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::backend_version,
             commands::startup_options,
+            commands::consume_pending_manager_navigation,
             commands::load_overview,
             commands::launch_codex_plus,
             commands::restart_codex_plus,
             commands::load_settings,
             commands::save_settings,
+            commands::test_vlm,
             commands::load_grok_config,
             commands::save_grok_config,
             commands::weixin_connect_qr_start,
@@ -131,6 +134,16 @@ pub fn run() {
             commands::install_market_script,
             commands::set_user_script_enabled,
             commands::delete_user_script,
+            commands::refresh_skill_catalog,
+            commands::list_installed_skills,
+            commands::install_skill,
+            commands::update_skill,
+            commands::set_skill_enabled,
+            commands::uninstall_skill,
+            commands::restore_skill_backup,
+            commands::delete_skill_backup,
+            commands::upsert_skill_repo,
+            commands::delete_skill_repo,
             commands::open_external_url,
             commands::install_entrypoints,
             commands::uninstall_entrypoints,
@@ -164,6 +177,10 @@ pub fn run() {
             commands::sync_live_context_entries,
             commands::upsert_context_entry,
             commands::delete_context_entry,
+            commands::parse_mcp_entry,
+            commands::build_mcp_entry,
+            commands::preview_mcp_servers_json,
+            commands::import_mcp_servers_json,
             commands::extract_relay_common_config,
             commands::test_relay_profile,
             commands::diagnose_relay_profile,
@@ -184,7 +201,8 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Opened { urls } = event {
                 for url in urls {
-                    if handle_session_share_url(url.as_str()) || handle_dream_skin_url(url.as_str()) {
+                    if handle_session_share_url(url.as_str()) || handle_dream_skin_url(url.as_str())
+                    {
                         show_main_window(app_handle);
                     }
                 }
@@ -306,12 +324,16 @@ fn register_main_window_events<R: tauri::Runtime>(
     let minimized_window = event_window.clone();
     let close_event_window = event_window.clone();
     let close_event_app = event_window.app_handle().clone();
+    let focus_event_window = event_window.clone();
 
     event_window.on_window_event(move |event| match event {
         WindowEvent::Resized(_) => {
             if matches!(minimized_window.is_minimized(), Ok(true)) {
                 let _ = minimized_window.hide();
             }
+        }
+        WindowEvent::Focused(true) => {
+            let _ = focus_event_window.emit(MANAGER_NAVIGATION_EVENT, ());
         }
         WindowEvent::CloseRequested { api, .. } => {
             if APP_EXITING.load(Ordering::SeqCst) {

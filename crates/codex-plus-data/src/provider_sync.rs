@@ -1,3 +1,4 @@
+use fs2::FileExt;
 use rusqlite::{Connection, OptionalExtension, params_from_iter, types::Value as SqlValue};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -17,12 +18,23 @@ const REMOTE_CONTROL_CREATION_WINDOW_SECS: i64 = 15 * 60;
 /// 该窗口只有几毫秒，因此超过这个时长仍缺 owner 的锁一定是中断残留，可以安全回收；
 /// 反过来说，宽限期内的无主锁必须保留，否则会把正在建锁的同伴进程挤掉。
 const LOCK_INTERRUPTED_GRACE_SECS: u64 = 60;
+/// Legacy owner files do not record the OS process creation time. A live PID whose process began
+/// well after the lock was created is a reused PID, not the original lock owner.
+const LEGACY_PID_REUSE_TOLERANCE_SECS: u64 = 5 * 60;
+const LEGACY_PID_REUSE_MIN_LOCK_AGE_SECS: u64 = 24 * 60 * 60;
+const PROCESS_START_MATCH_TOLERANCE_SECS: u64 = 5;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ProviderSyncLockOwner {
     pid: u32,
     started_at: u64,
+    #[serde(default)]
+    process_started_at: Option<u64>,
+    #[serde(default)]
+    process_birth_id: Option<String>,
+    #[serde(default)]
+    lock_id: Option<String>,
 }
 
 /// provider sync 锁的可观测状态。管理器在强杀 launcher 前用它判断
@@ -41,6 +53,55 @@ pub enum ProviderSyncLockState {
     Indeterminate,
 }
 
+#[derive(Debug)]
+pub struct ProviderSyncLifecycleGuard {
+    lock_dir: PathBuf,
+    lock_file: File,
+    lock_id: String,
+    directory_released: bool,
+    file_unlocked: bool,
+}
+
+impl ProviderSyncLifecycleGuard {
+    /// Releases both compatibility and OS ownership before a caller starts a successor process.
+    /// A mismatched owner is an ABA conflict and must block the successor instead of deleting it.
+    pub fn release(mut self) -> std::io::Result<()> {
+        if !release_owned_lock(&self.lock_dir, &self.lock_id)? {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "provider-sync lock ownership changed before release",
+            ));
+        }
+        self.directory_released = true;
+        FileExt::unlock(&self.lock_file)?;
+        self.file_unlocked = true;
+        Ok(())
+    }
+}
+
+impl Drop for ProviderSyncLifecycleGuard {
+    fn drop(&mut self) {
+        if !self.directory_released {
+            let _ = release_owned_lock(&self.lock_dir, &self.lock_id);
+        }
+        if !self.file_unlocked {
+            let _ = FileExt::unlock(&self.lock_file);
+        }
+    }
+}
+
+/// Atomically reserves provider-sync lifecycle ownership for a restart or a real sync.
+/// The OS file lock is released automatically if the process exits; the legacy directory remains
+/// present while held so older launchers also stay out of the critical section.
+pub fn try_acquire_provider_sync_lifecycle_guard(
+    codex_home: Option<&Path>,
+) -> std::io::Result<ProviderSyncLifecycleGuard> {
+    let home = codex_home
+        .map(Path::to_path_buf)
+        .unwrap_or_else(default_codex_home_dir);
+    acquire_lock_inner(&home.join("tmp/provider-sync.lock"), false)
+}
+
 /// 读取 provider sync 锁的当前状态，不获取也不修改它。
 pub fn inspect_provider_sync_lock(codex_home: Option<&Path>) -> ProviderSyncLockState {
     let home = codex_home
@@ -56,7 +117,7 @@ fn inspect_lock(path: &Path) -> ProviderSyncLockState {
     classify_lock(
         read_lock_owner(path).as_ref(),
         lock_dir_age_secs(path),
-        codex_plus_core::watcher::process_id_is_running,
+        codex_plus_core::watcher::inspect_process_instance,
     )
 }
 
@@ -64,7 +125,7 @@ fn inspect_lock(path: &Path) -> ProviderSyncLockState {
 fn classify_lock(
     owner: Option<&ProviderSyncLockOwner>,
     age_secs: Option<u64>,
-    process_alive: impl Fn(u32) -> Option<bool>,
+    inspect_process: impl Fn(u32) -> codex_plus_core::watcher::ProcessInstanceState,
 ) -> ProviderSyncLockState {
     let Some(owner) = owner else {
         // owner.json 缺失或损坏。持有者只在建锁的几毫秒内处于这个状态，
@@ -75,15 +136,61 @@ fn classify_lock(
             ProviderSyncLockState::Indeterminate
         };
     };
-    match process_alive(owner.pid) {
-        Some(false) => ProviderSyncLockState::Stale {
+    use codex_plus_core::watcher::ProcessInstanceState;
+    match inspect_process(owner.pid) {
+        ProcessInstanceState::NotRunning => ProviderSyncLockState::Stale {
             pid: Some(owner.pid),
         },
-        // `None` 表示进程枚举失败，无法证明持有者已死；按「仍在持有」保守处理。
-        _ => ProviderSyncLockState::Held {
+        ProcessInstanceState::Running {
+            started_at_secs,
+            birth_id: current_birth_id,
+        } => {
+            let birth_mismatch = owner
+                .process_birth_id
+                .as_deref()
+                .zip(current_birth_id.as_deref())
+                .is_some_and(|(expected, current)| expected != current);
+            let recorded_start_mismatch = owner.process_birth_id.is_none()
+                && owner.process_started_at.zip(started_at_secs).is_some_and(
+                    |(expected, current)| {
+                        expected.abs_diff(current) > PROCESS_START_MATCH_TOLERANCE_SECS
+                    },
+                );
+            let legacy_pid_reuse = owner.process_birth_id.is_none()
+                && owner.process_started_at.is_none()
+                && age_secs.is_some_and(|age| age >= LEGACY_PID_REUSE_MIN_LOCK_AGE_SECS)
+                && started_at_secs.is_some_and(|current| {
+                    current
+                        > owner
+                            .started_at
+                            .saturating_add(LEGACY_PID_REUSE_TOLERANCE_SECS)
+                });
+            if birth_mismatch || recorded_start_mismatch || legacy_pid_reuse {
+                ProviderSyncLockState::Stale {
+                    pid: Some(owner.pid),
+                }
+            } else {
+                ProviderSyncLockState::Held {
+                    pid: owner.pid,
+                    started_at: owner.started_at,
+                }
+            }
+        }
+        // Unknown process identity cannot prove that the owner is gone. Preserve the lock.
+        ProcessInstanceState::Unknown => ProviderSyncLockState::Held {
             pid: owner.pid,
             started_at: owner.started_at,
         },
+    }
+}
+
+fn current_process_identity() -> (Option<u64>, Option<String>) {
+    match codex_plus_core::watcher::inspect_process_instance(std::process::id()) {
+        codex_plus_core::watcher::ProcessInstanceState::Running {
+            started_at_secs,
+            birth_id,
+        } => (started_at_secs, birth_id),
+        _ => (None, None),
     }
 }
 
@@ -274,6 +381,12 @@ struct CatalogRepairThread {
     thread_source: Option<String>,
 }
 
+#[derive(Debug)]
+struct CatalogRepairObservedThread {
+    thread: CatalogRepairThread,
+    eligible: bool,
+}
+
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 struct CatalogRepairCounts {
     inserted_rows: usize,
@@ -295,12 +408,14 @@ impl CatalogRepairCounts {
 struct CatalogRepairPlan {
     threads: HashMap<String, CatalogRepairThread>,
     non_root_thread_ids: HashSet<String>,
+    ineligible_thread_ids: HashSet<String>,
     catalog_non_root_thread_ids: HashMap<PathBuf, HashSet<String>>,
 }
 
 impl CatalogRepairPlan {
     fn has_cleanup_candidates(&self) -> bool {
         !self.non_root_thread_ids.is_empty()
+            || !self.ineligible_thread_ids.is_empty()
             || self
                 .catalog_non_root_thread_ids
                 .values()
@@ -309,6 +424,7 @@ impl CatalogRepairPlan {
 
     fn cleanup_thread_ids_for_path(&self, path: &Path) -> HashSet<String> {
         let mut thread_ids = self.non_root_thread_ids.clone();
+        thread_ids.extend(self.ineligible_thread_ids.iter().cloned());
         if let Some(catalog_thread_ids) = self.catalog_non_root_thread_ids.get(path) {
             thread_ids.extend(catalog_thread_ids.iter().cloned());
         }
@@ -427,23 +543,26 @@ pub fn run_remote_control_session_catalog_recovery_for_thread_with_target(
         .map(Path::to_path_buf)
         .unwrap_or_else(default_codex_home_dir);
     let lock_dir = home.join("tmp/provider-sync.lock");
-    if acquire_lock(&lock_dir).is_err() {
-        return result(
-            ProviderSyncStatus::Skipped,
-            format!("Provider sync lock exists: {}", lock_dir.to_string_lossy()),
-            target_provider,
-            None,
-            0,
-            0,
-        );
-    }
+    let _lock_guard = match acquire_lock(&lock_dir) {
+        Ok(guard) => guard,
+        Err(_) => {
+            return result(
+                ProviderSyncStatus::Skipped,
+                format!("Provider sync lock exists: {}", lock_dir.to_string_lossy()),
+                target_provider,
+                None,
+                0,
+                0,
+            );
+        }
+    };
     let thread_ids = HashSet::from([thread_id.to_string()]);
     let recovery = run_remote_control_catalog_recovery_for_threads(
+        &home,
         &provider_sync_db_paths(&home),
         target_provider,
         &thread_ids,
     );
-    let _ = release_lock(&lock_dir);
     recovery.unwrap_or_else(|error| {
         result(
             ProviderSyncStatus::Skipped,
@@ -481,16 +600,19 @@ pub fn run_remote_control_session_finalization_for_thread_with_target(
         .map(Path::to_path_buf)
         .unwrap_or_else(default_codex_home_dir);
     let lock_dir = home.join("tmp/provider-sync.lock");
-    if acquire_lock(&lock_dir).is_err() {
-        return result(
-            ProviderSyncStatus::Skipped,
-            format!("Provider sync lock exists: {}", lock_dir.to_string_lossy()),
-            target_provider,
-            None,
-            0,
-            0,
-        );
-    }
+    let _lock_guard = match acquire_lock(&lock_dir) {
+        Ok(guard) => guard,
+        Err(_) => {
+            return result(
+                ProviderSyncStatus::Skipped,
+                format!("Provider sync lock exists: {}", lock_dir.to_string_lossy()),
+                target_provider,
+                None,
+                0,
+                0,
+            );
+        }
+    };
     let recovery = (|| -> anyhow::Result<ProviderSyncResult> {
         let sqlite_paths = provider_sync_db_paths(&home);
         let rollout_path = match remote_control_rollout_for_thread(
@@ -559,6 +681,7 @@ pub fn run_remote_control_session_finalization_for_thread_with_target(
         }
         let thread_ids = HashSet::from([thread_id.to_string()]);
         let catalog_repairs = repair_missing_local_thread_catalog_rows_for_threads(
+            &home,
             &sqlite_paths,
             target_provider,
             &thread_ids,
@@ -584,7 +707,6 @@ pub fn run_remote_control_session_finalization_for_thread_with_target(
         synced.sqlite_catalog_rows_removed = sqlite_updates.catalog_remove_rows;
         Ok(synced)
     })();
-    let _ = release_lock(&lock_dir);
     recovery.unwrap_or_else(|error| {
         result(
             ProviderSyncStatus::Skipped,
@@ -598,6 +720,7 @@ pub fn run_remote_control_session_finalization_for_thread_with_target(
 }
 
 fn run_remote_control_catalog_recovery_for_threads(
+    home: &Path,
     sqlite_paths: &[PathBuf],
     target_provider: &str,
     requested_thread_ids: &HashSet<String>,
@@ -619,6 +742,7 @@ fn run_remote_control_catalog_recovery_for_threads(
     }
 
     let catalog_repairs = repair_missing_local_thread_catalog_rows_for_threads(
+        home,
         sqlite_paths,
         target_provider,
         &thread_ids,
@@ -693,16 +817,19 @@ pub fn run_provider_sync_with_target(
         }
     }
     let lock_dir = home.join("tmp/provider-sync.lock");
-    if acquire_lock(&lock_dir).is_err() {
-        return result(
-            ProviderSyncStatus::Skipped,
-            format!("Provider sync lock exists: {}", lock_dir.to_string_lossy()),
-            &target_provider,
-            None,
-            0,
-            0,
-        );
-    }
+    let _lock_guard = match acquire_lock(&lock_dir) {
+        Ok(guard) => guard,
+        Err(_) => {
+            return result(
+                ProviderSyncStatus::Skipped,
+                format!("Provider sync lock exists: {}", lock_dir.to_string_lossy()),
+                &target_provider,
+                None,
+                0,
+                0,
+            );
+        }
+    };
     let sync_result = (|| -> anyhow::Result<ProviderSyncResult> {
         let sqlite_paths = provider_sync_db_paths(&home);
         let thread_kinds = sqlite_provider_sync_thread_kinds(&sqlite_paths)?;
@@ -759,7 +886,7 @@ pub fn run_provider_sync_with_target(
             &subagent_thread_ids,
         )?;
         let catalog_repair_count =
-            count_local_thread_catalog_repairs(&sqlite_paths, &target_provider)?;
+            count_local_thread_catalog_repairs(&home, &sqlite_paths, &target_provider)?;
         let global_state_update_count =
             count_global_state_updates(&home.join(".codex-global-state.json"))?;
         if rewrite_changes.is_empty()
@@ -794,7 +921,7 @@ pub fn run_provider_sync_with_target(
             )?;
             let mut sqlite_updates = sqlite_updates;
             let catalog_repairs =
-                repair_missing_local_thread_catalog_rows(&sqlite_paths, &target_provider)?;
+                repair_missing_local_thread_catalog_rows(&home, &sqlite_paths, &target_provider)?;
             sqlite_updates.catalog_insert_rows = catalog_repairs.inserted_rows;
             sqlite_updates.catalog_remove_rows = catalog_repairs.removed_rows;
             let updated_workspace_roots =
@@ -834,7 +961,6 @@ pub fn run_provider_sync_with_target(
         synced.message = provider_sync_message_with_audit(&synced.message, &synced.repair_audit);
         Ok(synced)
     })();
-    let _ = release_lock(&lock_dir);
     sync_result.unwrap_or_else(|err| {
         result(
             ProviderSyncStatus::Skipped,
@@ -1167,16 +1293,42 @@ fn toml_string_value(raw: &str) -> Option<String> {
     None
 }
 
-fn acquire_lock(path: &Path) -> std::io::Result<()> {
+fn acquire_lock(path: &Path) -> std::io::Result<ProviderSyncLifecycleGuard> {
+    acquire_lock_inner(path, true)
+}
+
+fn acquire_lock_inner(path: &Path, log_busy: bool) -> std::io::Result<ProviderSyncLifecycleGuard> {
     fs::create_dir_all(path.parent().unwrap_or_else(|| Path::new(".")))?;
-    match create_lock(path) {
-        Ok(()) => Ok(()),
+    let lifecycle_path = path.with_file_name("provider-sync.lifecycle.lock");
+    let lock_file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(lifecycle_path)?;
+    if let Err(error) = lock_file.try_lock_exclusive() {
+        let error = normalize_lock_contention_error(error);
+        if log_busy {
+            log_lock_busy(path);
+        }
+        return Err(error);
+    }
+    let lock_id = uuid::Uuid::new_v4().to_string();
+    match create_lock(path, &lock_id) {
+        Ok(()) => Ok(ProviderSyncLifecycleGuard {
+            lock_dir: path.to_path_buf(),
+            lock_file,
+            lock_id,
+            directory_released: false,
+            file_unlocked: false,
+        }),
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
             let Some((owner, isolated_path)) = isolate_stale_lock(path) else {
-                log_lock_busy(path);
+                if log_busy {
+                    log_lock_busy(path);
+                }
                 return Err(error);
             };
-            match create_lock(path) {
+            match create_lock(path, &lock_id) {
                 Ok(()) => {
                     let quarantine_cleanup_failed = fs::remove_dir_all(&isolated_path).is_err();
                     let _ = codex_plus_core::diagnostic_log::append_diagnostic_log(
@@ -1184,12 +1336,21 @@ fn acquire_lock(path: &Path) -> std::io::Result<()> {
                         json!({
                             "owner_pid": owner.as_ref().map(|owner| owner.pid),
                             "owner_started_at": owner.as_ref().map(|owner| owner.started_at),
+                            "owner_process_started_at": owner
+                                .as_ref()
+                                .and_then(|owner| owner.process_started_at),
                             // owner 缺失说明持有者是在建锁中途被强杀的（issue #1901）
                             "interrupted": owner.is_none(),
                             "quarantine_cleanup_failed": quarantine_cleanup_failed,
                         }),
                     );
-                    Ok(())
+                    Ok(ProviderSyncLifecycleGuard {
+                        lock_dir: path.to_path_buf(),
+                        lock_file,
+                        lock_id,
+                        directory_released: false,
+                        file_unlocked: false,
+                    })
                 }
                 Err(retry_error) => {
                     let _ = fs::remove_dir_all(isolated_path);
@@ -1199,6 +1360,14 @@ fn acquire_lock(path: &Path) -> std::io::Result<()> {
         }
         Err(error) => Err(error),
     }
+}
+
+fn normalize_lock_contention_error(error: std::io::Error) -> std::io::Error {
+    #[cfg(windows)]
+    if error.raw_os_error() == Some(33) {
+        return std::io::Error::new(std::io::ErrorKind::WouldBlock, error);
+    }
+    error
 }
 
 /// 锁没能拿到时留下现场，用于区分「另一个同步真的在跑」和「残留锁把同步永久卡死」。
@@ -1214,11 +1383,19 @@ fn log_lock_busy(path: &Path) {
     );
 }
 
-fn create_lock(path: &Path) -> std::io::Result<()> {
+fn create_lock(path: &Path, lock_id: &str) -> std::io::Result<()> {
     fs::create_dir(path)?;
+    let (process_started_at, process_birth_id) = current_process_identity();
     let write_result = fs::write(
         path.join("owner.json"),
-        json!({"pid": std::process::id(), "startedAt": now_secs()}).to_string(),
+        json!({
+            "pid": std::process::id(),
+            "startedAt": now_secs(),
+            "processStartedAt": process_started_at,
+            "processBirthId": process_birth_id,
+            "lockId": lock_id,
+        })
+        .to_string(),
     );
     if let Err(error) = write_result {
         let _ = fs::remove_dir_all(path);
@@ -1227,18 +1404,28 @@ fn create_lock(path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// 把一把可以证明已经失效的锁挪到隔离路径，让调用方重新建锁。
+/// 在已经持有 OS 生命周期锁时，把可回收的兼容目录挪到隔离路径，让调用方重新建锁。
 ///
-/// 两种可回收的形态：
+/// 三种可回收的形态：
+/// - owner.json 带 `lockId`，证明目录来自新版协议；OS 锁既然已取得，该目录必为孤儿；
 /// - owner.json 可读且持有进程已退出（正常的崩溃残留）；
 /// - owner.json 缺失/损坏，且锁目录存在时间已超过 [`LOCK_INTERRUPTED_GRACE_SECS`]
 ///   ——持有者在 `create_lock` 中途被强杀，不会再有人来补写 owner（issue #1901）。
 ///
 /// 其余情况一律保留锁：宁可跳过一次同步，也不能抢走仍在写入的进程的锁。
 fn isolate_stale_lock(path: &Path) -> Option<(Option<ProviderSyncLockOwner>, PathBuf)> {
-    let owner = match inspect_lock(path) {
-        ProviderSyncLockState::Stale { .. } => read_lock_owner(path),
-        _ => return None,
+    let parsed_owner = read_lock_owner(path);
+    let owner = if parsed_owner
+        .as_ref()
+        .and_then(|owner| owner.lock_id.as_ref())
+        .is_some()
+    {
+        parsed_owner
+    } else {
+        match inspect_lock(path) {
+            ProviderSyncLockState::Stale { .. } => parsed_owner,
+            _ => return None,
+        }
     };
     let file_name = path.file_name()?.to_string_lossy();
     let owner_tag = owner
@@ -1252,11 +1439,18 @@ fn isolate_stale_lock(path: &Path) -> Option<(Option<ProviderSyncLockOwner>, Pat
     Some((owner, isolated_path))
 }
 
-fn release_lock(path: &Path) -> std::io::Result<()> {
-    if path.exists() {
-        fs::remove_dir_all(path)?;
+fn release_owned_lock(path: &Path, lock_id: &str) -> std::io::Result<bool> {
+    if !path.exists() {
+        return Ok(true);
     }
-    Ok(())
+    if read_lock_owner(path)
+        .and_then(|owner| owner.lock_id)
+        .is_some_and(|owner_lock_id| owner_lock_id == lock_id)
+    {
+        fs::remove_dir_all(path)?;
+        return Ok(true);
+    }
+    Ok(false)
 }
 
 fn collect_session_changes(
@@ -1910,7 +2104,7 @@ pub fn apply_session_index_cleanup(
         .map(Path::to_path_buf)
         .unwrap_or_else(default_codex_home_dir);
     let lock_dir = home.join("tmp/provider-sync.lock");
-    acquire_lock(&lock_dir).map_err(|error| cleanup_apply_error(error, None))?;
+    let _lock_guard = acquire_lock(&lock_dir).map_err(|error| cleanup_apply_error(error, None))?;
     let result = (|| {
         let sqlite_paths =
             codex_plus_core::codex_sqlite::codex_thread_reference_db_paths_from_home(&home);
@@ -1980,7 +2174,6 @@ pub fn apply_session_index_cleanup(
             backup_dir: Some(backup_dir),
         })
     })();
-    let _ = release_lock(&lock_dir);
     result
 }
 
@@ -2958,10 +3151,11 @@ fn apply_remote_control_catalog_updates(
 }
 
 fn count_local_thread_catalog_repairs(
+    home: &Path,
     paths: &[PathBuf],
     target_provider: &str,
 ) -> anyhow::Result<usize> {
-    let plan = collect_catalog_repair_plan(paths, target_provider, None)?;
+    let plan = collect_catalog_repair_plan(home, paths, target_provider, None)?;
     if plan.threads.is_empty() && !plan.has_cleanup_candidates() {
         return Ok(0);
     }
@@ -2993,18 +3187,21 @@ fn count_local_thread_catalog_repairs(
 }
 
 fn repair_missing_local_thread_catalog_rows(
+    home: &Path,
     paths: &[PathBuf],
     target_provider: &str,
 ) -> anyhow::Result<CatalogRepairCounts> {
-    repair_missing_local_thread_catalog_rows_filtered(paths, target_provider, None, true)
+    repair_missing_local_thread_catalog_rows_filtered(home, paths, target_provider, None, true)
 }
 
 fn repair_missing_local_thread_catalog_rows_for_threads(
+    home: &Path,
     paths: &[PathBuf],
     target_provider: &str,
     thread_ids: &HashSet<String>,
 ) -> anyhow::Result<CatalogRepairCounts> {
     repair_missing_local_thread_catalog_rows_filtered(
+        home,
         paths,
         target_provider,
         Some(thread_ids),
@@ -3013,12 +3210,13 @@ fn repair_missing_local_thread_catalog_rows_for_threads(
 }
 
 fn repair_missing_local_thread_catalog_rows_filtered(
+    home: &Path,
     paths: &[PathBuf],
     target_provider: &str,
     thread_ids: Option<&HashSet<String>>,
     update_full_sync_state: bool,
 ) -> anyhow::Result<CatalogRepairCounts> {
-    let plan = collect_catalog_repair_plan(paths, target_provider, thread_ids)?;
+    let plan = collect_catalog_repair_plan(home, paths, target_provider, thread_ids)?;
     if plan.threads.is_empty()
         && (!update_full_sync_state || !plan.has_cleanup_candidates())
     {
@@ -3105,6 +3303,7 @@ fn repair_missing_local_thread_catalog_rows_filtered(
 }
 
 fn collect_catalog_repair_plan(
+    home: &Path,
     paths: &[PathBuf],
     target_provider: &str,
     thread_ids: Option<&HashSet<String>>,
@@ -3112,7 +3311,7 @@ fn collect_catalog_repair_plan(
     let spawned_child_ids = collect_spawned_child_thread_ids(paths)?;
     let mut catalog_non_root_thread_ids =
         collect_catalog_marked_non_root_thread_ids(paths, &spawned_child_ids)?;
-    let mut threads = HashMap::new();
+    let mut observed_threads = HashMap::new();
     for path in paths {
         if !path.exists() {
             continue;
@@ -3134,53 +3333,95 @@ fn collect_catalog_repair_plan(
         let source_detail = text_expr(&columns, "rollout_path", "''");
         let git_branch = text_expr(&columns, "git_branch", "NULL");
         let thread_source = text_expr(&columns, "thread_source", "NULL");
+        let archived = text_expr(&columns, "archived", "0");
+        let has_user_event = text_expr(&columns, "has_user_event", "1");
+        let agent_role = text_expr(&columns, "agent_role", "''");
         let subagent_filter = subagent_filter(&db, "threads.id")?;
         let sql = format!(
-            "SELECT id, {display_title}, {source_created_at}, {source_updated_at}, {cwd}, {source_kind}, {source_detail}, {git_branch}, {thread_source} FROM threads WHERE COALESCE(id, '') <> ''{subagent_filter}"
+            "SELECT id, {display_title}, {source_created_at}, {source_updated_at}, {cwd}, {source_kind}, {source_detail}, {git_branch}, {thread_source}, {archived}, {has_user_event}, {agent_role} FROM threads WHERE COALESCE(id, '') <> ''{subagent_filter}"
         );
         let mut stmt = db.prepare(&sql)?;
         let rows = stmt.query_map([], |row| {
-            Ok(CatalogRepairThread {
-                id: row.get(0)?,
-                display_title: row.get::<_, String>(1).unwrap_or_default(),
-                source_created_at: row.get::<_, f64>(2).unwrap_or_default(),
-                source_updated_at: row.get::<_, f64>(3).unwrap_or_default(),
-                cwd: row.get::<_, String>(4).unwrap_or_default(),
-                source_kind: row
-                    .get::<_, String>(5)
-                    .unwrap_or_else(|_| "cli".to_string()),
-                source_detail: row.get::<_, String>(6).unwrap_or_default(),
-                model_provider: target_provider.to_string(),
-                git_branch: row.get::<_, Option<String>>(7).unwrap_or(None),
-                thread_source: row.get::<_, Option<String>>(8).unwrap_or(None),
-            })
+            Ok((
+                CatalogRepairThread {
+                    id: row.get(0)?,
+                    display_title: row.get::<_, String>(1).unwrap_or_default(),
+                    source_created_at: row.get::<_, f64>(2).unwrap_or_default(),
+                    source_updated_at: row.get::<_, f64>(3).unwrap_or_default(),
+                    cwd: row.get::<_, String>(4).unwrap_or_default(),
+                    source_kind: row
+                        .get::<_, String>(5)
+                        .unwrap_or_else(|_| "cli".to_string()),
+                    source_detail: row.get::<_, String>(6).unwrap_or_default(),
+                    model_provider: target_provider.to_string(),
+                    git_branch: row.get::<_, Option<String>>(7).unwrap_or(None),
+                    thread_source: row.get::<_, Option<String>>(8).unwrap_or(None),
+                },
+                row.get::<_, i64>(9).unwrap_or_default(),
+                row.get::<_, i64>(10).unwrap_or(1),
+                row.get::<_, String>(11).unwrap_or_default(),
+            ))
         })?;
         for item in rows {
-            let thread = item?;
-            let replace = threads
+            let (thread, archived, has_user_event, agent_role) = item?;
+            let marked_non_user = columns.contains("thread_source")
+                && thread.thread_source.as_deref().is_some_and(|value| {
+                    let value = value.trim();
+                    !value.is_empty() && !value.eq_ignore_ascii_case("user")
+                });
+            let non_root = is_catalog_non_root_agent(&thread, &spawned_child_ids);
+            let source_is_exec = thread.source_kind.trim().eq_ignore_ascii_case("exec");
+            let rollout_exists = catalog_rollout_path_exists(home, &thread.source_detail);
+            let eligible = archived == 0
+                && has_user_event == 1
+                && agent_role.trim().is_empty()
+                && !marked_non_user
+                && !source_is_exec
+                && !non_root
+                && rollout_exists;
+            let replace = observed_threads
                 .get(&thread.id)
-                .map(|current: &CatalogRepairThread| {
-                    thread.source_updated_at > current.source_updated_at
+                .map(|current: &CatalogRepairObservedThread| {
+                    // Copies can share a timestamp; an ineligible observation wins the tie so
+                    // an archived or agent-owned thread cannot be resurrected by a stale copy.
+                    thread.source_updated_at > current.thread.source_updated_at
+                        || (thread.source_updated_at == current.thread.source_updated_at
+                            && !eligible
+                            && current.eligible)
                 })
                 .unwrap_or(true);
             if replace {
-                threads.insert(thread.id.clone(), thread);
+                observed_threads.insert(
+                    thread.id.clone(),
+                    CatalogRepairObservedThread { thread, eligible },
+                );
             }
         }
     }
     if let Some(thread_ids) = thread_ids {
-        threads.retain(|thread_id, _| thread_ids.contains(thread_id));
+        observed_threads.retain(|thread_id, _| thread_ids.contains(thread_id));
     }
-    let explicit_user_thread_ids = threads
+    let explicit_user_thread_ids = observed_threads
         .values()
-        .filter(|thread| thread_source_is_user(thread.thread_source.as_deref()))
-        .map(|thread| thread.id.clone())
+        .filter(|observed| thread_source_is_user(observed.thread.thread_source.as_deref()))
+        .map(|observed| observed.thread.id.clone())
         .collect::<HashSet<_>>();
-    let non_root_thread_ids = threads
+    let non_root_thread_ids = observed_threads
         .values()
-        .filter(|thread| is_catalog_non_root_agent(thread, &spawned_child_ids))
-        .map(|thread| thread.id.clone())
+        .filter(|observed| is_catalog_non_root_agent(&observed.thread, &spawned_child_ids))
+        .map(|observed| observed.thread.id.clone())
         .collect::<HashSet<_>>();
+    let ineligible_thread_ids = observed_threads
+        .values()
+        .filter(|observed| !observed.eligible)
+        .map(|observed| observed.thread.id.clone())
+        .collect::<HashSet<_>>();
+    let threads = observed_threads
+        .into_iter()
+        .filter_map(|(thread_id, observed)| {
+            observed.eligible.then_some((thread_id, observed.thread))
+        })
+        .collect::<HashMap<_, _>>();
     // Catalog-only evidence stays path-scoped so one stale database cannot remove another's row.
     for catalog_thread_ids in catalog_non_root_thread_ids.values_mut() {
         catalog_thread_ids.retain(|thread_id| {
@@ -3191,12 +3432,25 @@ fn collect_catalog_repair_plan(
         });
     }
     catalog_non_root_thread_ids.retain(|_, thread_ids| !thread_ids.is_empty());
-    threads.retain(|thread_id, _| !non_root_thread_ids.contains(thread_id));
     Ok(CatalogRepairPlan {
         threads,
         non_root_thread_ids,
+        ineligible_thread_ids,
         catalog_non_root_thread_ids,
     })
+}
+
+fn catalog_rollout_path_exists(home: &Path, rollout_path: &str) -> bool {
+    let rollout_path = rollout_path.trim();
+    if rollout_path.is_empty() {
+        return true;
+    }
+    let rollout_path = Path::new(rollout_path);
+    if rollout_path.is_absolute() {
+        rollout_path.is_file()
+    } else {
+        home.join(rollout_path).is_file()
+    }
 }
 
 fn collect_spawned_child_thread_ids(paths: &[PathBuf]) -> anyhow::Result<HashSet<String>> {
@@ -3847,17 +4101,28 @@ mod non_root_agent_tests {
 #[cfg(test)]
 mod lock_state_tests {
     use super::*;
+    use codex_plus_core::watcher::ProcessInstanceState;
 
     fn owner(pid: u32) -> ProviderSyncLockOwner {
         ProviderSyncLockOwner {
             pid,
             started_at: 1234,
+            process_started_at: Some(1200),
+            process_birth_id: Some("birth-1200".to_string()),
+            lock_id: Some("lock-1".to_string()),
+        }
+    }
+
+    fn running(started_at_secs: Option<u64>) -> ProcessInstanceState {
+        ProcessInstanceState::Running {
+            started_at_secs,
+            birth_id: started_at_secs.map(|started_at| format!("birth-{started_at}")),
         }
     }
 
     #[test]
     fn live_owner_counts_as_held() {
-        let state = classify_lock(Some(&owner(42)), Some(0), |_| Some(true));
+        let state = classify_lock(Some(&owner(42)), Some(0), |_| running(Some(1200)));
 
         assert_eq!(
             state,
@@ -3870,14 +4135,112 @@ mod lock_state_tests {
 
     #[test]
     fn dead_owner_counts_as_stale() {
-        let state = classify_lock(Some(&owner(42)), Some(0), |_| Some(false));
+        let state = classify_lock(Some(&owner(42)), Some(0), |_| {
+            ProcessInstanceState::NotRunning
+        });
 
         assert_eq!(state, ProviderSyncLockState::Stale { pid: Some(42) });
     }
 
     #[test]
-    fn unknown_liveness_is_treated_as_held_rather_than_stolen() {
-        let state = classify_lock(Some(&owner(42)), Some(9_999), |_| None);
+    fn reused_pid_with_a_different_process_start_is_stale() {
+        let state = classify_lock(Some(&owner(42)), Some(9_999), |_| running(Some(5000)));
+
+        assert_eq!(state, ProviderSyncLockState::Stale { pid: Some(42) });
+    }
+
+    #[test]
+    fn matching_birth_id_tolerates_approximate_unix_start_time_drift() {
+        let state = classify_lock(Some(&owner(42)), Some(0), |_| {
+            ProcessInstanceState::Running {
+                started_at_secs: Some(1201),
+                birth_id: Some("birth-1200".to_string()),
+            }
+        });
+
+        assert_eq!(
+            state,
+            ProviderSyncLockState::Held {
+                pid: 42,
+                started_at: 1234
+            }
+        );
+    }
+
+    #[test]
+    fn legacy_owner_with_a_much_newer_process_is_stale() {
+        let legacy_owner = ProviderSyncLockOwner {
+            process_started_at: None,
+            process_birth_id: None,
+            lock_id: None,
+            ..owner(42)
+        };
+        let state = classify_lock(
+            Some(&legacy_owner),
+            Some(LEGACY_PID_REUSE_MIN_LOCK_AGE_SECS),
+            |_| {
+                running(Some(
+                    legacy_owner.started_at + LEGACY_PID_REUSE_TOLERANCE_SECS + 1,
+                ))
+            },
+        );
+
+        assert_eq!(state, ProviderSyncLockState::Stale { pid: Some(42) });
+    }
+
+    #[test]
+    fn legacy_owner_keeps_a_process_started_before_the_lock() {
+        let legacy_owner = ProviderSyncLockOwner {
+            process_started_at: None,
+            process_birth_id: None,
+            lock_id: None,
+            ..owner(42)
+        };
+        let state = classify_lock(Some(&legacy_owner), Some(9_999), |_| {
+            running(Some(legacy_owner.started_at - 1))
+        });
+
+        assert_eq!(
+            state,
+            ProviderSyncLockState::Held {
+                pid: 42,
+                started_at: 1234
+            }
+        );
+    }
+
+    #[test]
+    fn recent_legacy_lock_remains_held_even_if_wall_clock_evidence_looks_newer() {
+        let legacy_owner = ProviderSyncLockOwner {
+            process_started_at: None,
+            process_birth_id: None,
+            lock_id: None,
+            ..owner(42)
+        };
+        let state = classify_lock(
+            Some(&legacy_owner),
+            Some(LEGACY_PID_REUSE_MIN_LOCK_AGE_SECS - 1),
+            |_| {
+                running(Some(
+                    legacy_owner.started_at + LEGACY_PID_REUSE_TOLERANCE_SECS + 1,
+                ))
+            },
+        );
+
+        assert_eq!(
+            state,
+            ProviderSyncLockState::Held {
+                pid: 42,
+                started_at: 1234
+            }
+        );
+    }
+
+    #[test]
+    fn unknown_process_identity_is_treated_as_held_rather_than_stolen() {
+        let state = classify_lock(Some(&owner(42)), Some(9_999), |_| {
+            ProcessInstanceState::Unknown
+        });
 
         assert_eq!(
             state,
@@ -3890,22 +4253,121 @@ mod lock_state_tests {
 
     #[test]
     fn aged_lock_without_owner_is_recoverable_interrupted_leftover() {
-        let state = classify_lock(None, Some(LOCK_INTERRUPTED_GRACE_SECS), |_| Some(true));
+        let state = classify_lock(None, Some(LOCK_INTERRUPTED_GRACE_SECS), |_| {
+            running(Some(1200))
+        });
 
         assert_eq!(state, ProviderSyncLockState::Stale { pid: None });
     }
 
     #[test]
     fn fresh_lock_without_owner_is_left_alone_for_the_process_still_creating_it() {
-        let state = classify_lock(None, Some(LOCK_INTERRUPTED_GRACE_SECS - 1), |_| Some(true));
+        let state = classify_lock(None, Some(LOCK_INTERRUPTED_GRACE_SECS - 1), |_| {
+            running(Some(1200))
+        });
 
         assert_eq!(state, ProviderSyncLockState::Indeterminate);
     }
 
     #[test]
     fn unreadable_lock_age_is_left_alone() {
-        let state = classify_lock(None, None, |_| Some(true));
+        let state = classify_lock(None, None, |_| running(Some(1200)));
 
         assert_eq!(state, ProviderSyncLockState::Indeterminate);
+    }
+
+    #[test]
+    fn legacy_owner_json_remains_compatible() {
+        let owner: ProviderSyncLockOwner =
+            serde_json::from_str(r#"{"pid":42,"startedAt":1234}"#).unwrap();
+
+        assert_eq!(owner.pid, 42);
+        assert_eq!(owner.started_at, 1234);
+        assert_eq!(owner.process_started_at, None);
+        assert_eq!(owner.process_birth_id, None);
+        assert_eq!(owner.lock_id, None);
+    }
+
+    #[test]
+    fn lifecycle_guard_serializes_and_releases_the_legacy_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let lock_dir = temp.path().join("tmp/provider-sync.lock");
+        let first = acquire_lock_inner(&lock_dir, false).unwrap();
+
+        assert!(lock_dir.join("owner.json").is_file());
+        let error = acquire_lock_inner(&lock_dir, false).unwrap_err();
+        assert!(
+            matches!(
+                error.kind(),
+                std::io::ErrorKind::AlreadyExists | std::io::ErrorKind::WouldBlock
+            ),
+            "unexpected lock contention error: {error:?}; raw={:?}",
+            error.raw_os_error()
+        );
+
+        drop(first);
+        assert!(!lock_dir.exists());
+        let second = acquire_lock_inner(&lock_dir, false).unwrap();
+        drop(second);
+        assert!(!lock_dir.exists());
+    }
+
+    #[test]
+    fn a_guard_cannot_remove_a_directory_owned_by_another_lock_id() {
+        let temp = tempfile::tempdir().unwrap();
+        let lock_dir = temp.path().join("tmp/provider-sync.lock");
+        let guard = acquire_lock_inner(&lock_dir, false).unwrap();
+
+        assert!(!release_owned_lock(&lock_dir, "not-the-owner").unwrap());
+        assert!(lock_dir.join("owner.json").is_file());
+
+        drop(guard);
+        assert!(!lock_dir.exists());
+    }
+
+    #[test]
+    fn explicit_release_rejects_changed_directory_ownership() {
+        let temp = tempfile::tempdir().unwrap();
+        let lock_dir = temp.path().join("tmp/provider-sync.lock");
+        let guard = acquire_lock_inner(&lock_dir, false).unwrap();
+        fs::write(
+            lock_dir.join("owner.json"),
+            json!({
+                "pid": std::process::id(),
+                "startedAt": now_secs(),
+                "lockId": "replacement-owner",
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let error = guard.release().unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::Other);
+        assert!(lock_dir.exists());
+    }
+
+    #[test]
+    fn os_lock_authoritatively_recovers_an_orphaned_new_protocol_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let lock_dir = temp.path().join("tmp/provider-sync.lock");
+        let guard = acquire_lock_inner(&lock_dir, false).unwrap();
+        fs::write(
+            lock_dir.join("owner.json"),
+            json!({
+                "pid": std::process::id(),
+                "startedAt": now_secs(),
+                "lockId": "orphaned-owner",
+            })
+            .to_string(),
+        )
+        .unwrap();
+        drop(guard);
+        assert!(lock_dir.exists());
+
+        let recovered = acquire_lock_inner(&lock_dir, false).unwrap();
+        recovered.release().unwrap();
+
+        assert!(!lock_dir.exists());
     }
 }
