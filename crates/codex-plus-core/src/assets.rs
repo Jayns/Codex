@@ -45,9 +45,32 @@ const DREAM_SKIN_DEFAULT_IMAGE: &[u8] =
 const DREAM_SKIN_DEFAULT_IMAGE: &[u8] =
     include_bytes!("../../../assets/inject/upstream/dream-skin/macos/portal-hero.png");
 const PET_REAL_MOUSE_SCRIPT: &str = include_str!("../../../assets/inject/pet-real-mouse-inject.js");
-const STEPWISE_SCRIPT: &str = include_str!("../../../assets/inject/stepwise-inject.js");
+const STEPWISE_SCRIPT: &str = concat!(
+    "(() => {\n",
+    include_str!("../../../assets/inject/floating-panel/runtime/state.js"),
+    include_str!("../../../assets/inject/floating-panel/core/appearance-runtime.js"),
+    include_str!("../../../assets/inject/floating-panel/runtime/dom.js"),
+    include_str!("../../../assets/inject/floating-panel/runtime/bridge-client.js"),
+    include_str!("../../../assets/inject/floating-panel/runtime/answer-context.js"),
+    include_str!("../../../assets/inject/floating-panel/stepwise/suggestions.js"),
+    include_str!("../../../assets/inject/floating-panel/stepwise/generation.js"),
+    include_str!("../../../assets/inject/floating-panel/runtime/lifecycle.js"),
+    include_str!("../../../assets/inject/floating-panel/runtime/settings.js"),
+    include_str!("../../../assets/inject/floating-panel/core/appearance.js"),
+    include_str!("../../../assets/inject/floating-panel/core/host.js"),
+    include_str!("../../../assets/inject/floating-panel/core/geometry.js"),
+    include_str!("../../../assets/inject/floating-panel/core/interaction.js"),
+    include_str!("../../../assets/inject/floating-panel/core/views.js"),
+    include_str!("../../../assets/inject/floating-panel/outline/parser.js"),
+    include_str!("../../../assets/inject/floating-panel/outline/navigation.js"),
+    include_str!("../../../assets/inject/floating-panel/outline/feature.js"),
+    include_str!("../../../assets/inject/floating-panel/outline/view.js"),
+    include_str!("../../../assets/inject/floating-panel/core/scroll-state.js"),
+    include_str!("../../../assets/inject/floating-panel-inject.js"),
+    "\n})();\n",
+);
 pub const DIAGNOSTIC_BUILD_ID: &str = "diag-20260518-1";
-const DREAM_SKIN_RENDERER_REVISION: &str = "18";
+const DREAM_SKIN_RENDERER_REVISION: &str = "20-modern-main-surface";
 
 pub fn renderer_script() -> &'static str {
     RENDERER_SCRIPT
@@ -387,6 +410,11 @@ pub fn injection_script(helper_port: u16) -> String {
     injection_script_with_settings(helper_port, &BackendSettings::default())
 }
 
+pub fn hide_official_usage_alert_config(settings: &BackendSettings) -> bool {
+    let profile = settings.active_relay_profile();
+    profile.relay_mode == crate::settings::RelayMode::Official && profile.hide_official_usage_alert
+}
+
 pub fn injection_script_with_settings(helper_port: u16, settings: &BackendSettings) -> String {
     let helper_url = format!("http://127.0.0.1:{helper_port}");
     let image_overlay = image_overlay_config(helper_port, settings);
@@ -398,8 +426,15 @@ pub fn injection_script_with_settings(helper_port: u16, settings: &BackendSettin
     let paste_fix = paste_fix_enabled_config(settings);
     let force_chinese_locale = force_chinese_locale_config(settings);
     let fast_startup = fast_startup_config(settings);
+    let hide_official_usage_alert = hide_official_usage_alert_config(settings);
+    let stepwise_runtime =
+        if settings.codex_app_stepwise_enabled || settings.codex_app_answer_outline_enabled {
+            stepwise_script()
+        } else {
+            ""
+        };
     format!(
-        "window.__CODEX_SESSION_DELETE_HELPER__ = {};\nwindow.__CODEX_PLUS_VERSION__ = {};\nwindow.__CODEX_PLUS_BUILD__ = {};\nwindow.__CODEX_PLUS_IMAGE_OVERLAY__ = {};\nwindow.__CODEX_PLUS_PLUGIN_MARKETPLACES__ = {};\nwindow.__CODEX_PLUS_EXTERNAL_DREAM_SKIN_RUNTIME__ = true;\nwindow.__CODEX_PLUS_DREAM_SKIN_PLATFORM__ = {};\nwindow.__CODEX_PLUS_DREAM_SKIN_REVISION__ = {};\nwindow.__CODEX_PLUS_DREAM_SKIN_ART__ = {};\nwindow.__CODEX_PLUS_DREAM_SKIN_ART_SIGNATURE__ = {};\nwindow.__CODEX_PLUS_DREAM_SKIN_THEME__ = {};\nwindow.__CODEX_PLUS_PASTE_FIX__ = {};\nwindow.__CODEX_PLUS_FORCE_CHINESE_LOCALE__ = {};\nwindow.__CODEX_PLUS_FAST_STARTUP__ = {};\n{}\n{}\n{}",
+        "window.__CODEX_SESSION_DELETE_HELPER__ = {};\nwindow.__CODEX_PLUS_VERSION__ = {};\nwindow.__CODEX_PLUS_BUILD__ = {};\nwindow.__CODEX_PLUS_IMAGE_OVERLAY__ = {};\nwindow.__CODEX_PLUS_PLUGIN_MARKETPLACES__ = {};\nwindow.__CODEX_PLUS_EXTERNAL_DREAM_SKIN_RUNTIME__ = true;\nwindow.__CODEX_PLUS_DREAM_SKIN_PLATFORM__ = {};\nwindow.__CODEX_PLUS_DREAM_SKIN_REVISION__ = {};\nwindow.__CODEX_PLUS_DREAM_SKIN_ART__ = {};\nwindow.__CODEX_PLUS_DREAM_SKIN_ART_SIGNATURE__ = {};\nwindow.__CODEX_PLUS_DREAM_SKIN_THEME__ = {};\nwindow.__CODEX_PLUS_PASTE_FIX__ = {};\nwindow.__CODEX_PLUS_FORCE_CHINESE_LOCALE__ = {};\nwindow.__CODEX_PLUS_FAST_STARTUP__ = {};\nwindow.__CODEX_PLUS_HIDE_OFFICIAL_USAGE_ALERT__ = {};\n{}\n{}\n{}",
         serde_json::to_string(&helper_url).expect("helper URL should serialize"),
         serde_json::to_string(crate::version::VERSION).expect("version should serialize"),
         serde_json::to_string(DIAGNOSTIC_BUILD_ID).expect("build id should serialize"),
@@ -416,8 +451,10 @@ pub fn injection_script_with_settings(helper_port: u16, settings: &BackendSettin
         serde_json::to_string(&force_chinese_locale)
             .expect("force Chinese locale config should serialize"),
         serde_json::to_string(&fast_startup).expect("fast startup config should serialize"),
+        serde_json::to_string(&hide_official_usage_alert)
+            .expect("usage alert config should serialize"),
         renderer_script(),
-        stepwise_script(),
+        stepwise_runtime,
         dream_skin_target_runtime,
     )
 }

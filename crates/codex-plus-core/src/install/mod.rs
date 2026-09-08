@@ -15,6 +15,7 @@ pub const MANAGER_NAME: &str = "Codex++ 管理工具";
 /// `macos_companion_binary_from_exe` tries both sibling names.
 pub const MANAGER_PORTABLE_NAME: &str = "Codex 皮肤管理工具";
 pub const SILENT_BINARY: &str = "codex-plus-plus";
+pub const MACOS_SILENT_EXECUTABLE: &str = "CodexPlusPlus";
 pub const MANAGER_BINARY: &str = "codex-plus-plus-manager";
 pub const SILENT_BUNDLE_ID: &str = "com.bigpizzav3.codexplusplus";
 pub const MANAGER_BUNDLE_ID: &str = "com.bigpizzav3.codexplusplus.manager";
@@ -298,6 +299,24 @@ where
     Ok(path.to_string_lossy().to_string())
 }
 
+pub fn open_or_activate_manager() -> anyhow::Result<String> {
+    #[cfg(target_os = "macos")]
+    {
+        let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("."));
+        if let Some(bundle_id) = macos_companion_bundle_identifier_from_exe(&exe, MANAGER_BINARY) {
+            let activated = Command::new("/usr/bin/open")
+                .args(["-b", bundle_id])
+                .status()
+                .is_ok_and(|status| status.success());
+            if activated {
+                return Ok(format!("bundle:{bundle_id}"));
+            }
+        }
+    }
+
+    spawn_companion(MANAGER_BINARY, std::iter::empty::<&str>())
+}
+
 pub fn macos_companion_bundle_identifier_from_exe(
     exe: &Path,
     binary: &str,
@@ -319,13 +338,48 @@ pub fn companion_binary_path_from_exe(exe: &Path, binary: &str) -> PathBuf {
     let dir = exe.parent().unwrap_or_else(|| Path::new("."));
     let suffix = if cfg!(windows) { ".exe" } else { "" };
     if let Some(bundle_binary) = macos_companion_binary_from_exe(exe, binary) {
-        return bundle_binary;
+        // A local Tauri bundle contains the manager only. Prefer the freshly
+        // built launcher beside `target/release` when the sibling app is not
+        // present, while keeping the installed /Applications layout intact.
+        if bundle_binary.exists() || !is_macos_development_bundle(exe) {
+            return bundle_binary;
+        }
+    }
+    #[cfg(target_os = "macos")]
+    if let Some(development_binary) = macos_development_companion_binary(exe, binary) {
+        return development_binary;
     }
     let same_bundle = dir.join(binary);
     if same_bundle.exists() {
         return same_bundle;
     }
     dir.join(format!("{binary}{suffix}"))
+}
+
+fn is_macos_development_bundle(exe: &Path) -> bool {
+    exe.components()
+        .any(|component| component.as_os_str() == "target")
+        && exe
+            .components()
+            .any(|component| component.as_os_str() == "bundle")
+}
+
+#[cfg(target_os = "macos")]
+fn macos_development_companion_binary(exe: &Path, binary: &str) -> Option<PathBuf> {
+    let mut path = exe.parent()?;
+    while let Some(parent) = path.parent() {
+        if matches!(
+            path.file_name().and_then(|name| name.to_str()),
+            Some("release" | "debug")
+        ) {
+            let candidate = path.join(binary);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+        path = parent;
+    }
+    None
 }
 
 fn macos_companion_binary_from_exe(exe: &Path, binary: &str) -> Option<PathBuf> {
