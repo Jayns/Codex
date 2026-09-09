@@ -14,6 +14,11 @@ ICON_ICNS="$DIST/$ICON_NAME"
 BACKGROUND_SOURCE="$ROOT/assets/installer/macos/dmg-background.svg"
 BACKGROUND_PATH="$STAGE/.background/background.png"
 
+# Developer ID signing + Apple notarization (all opt-in via env vars; ad-hoc
+# signing and no notarization when unset — see lib-codesign.sh).
+# shellcheck source=scripts/installer/macos/lib-codesign.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib-codesign.sh"
+
 rm -rf "$DIST"
 mkdir -p "$STAGE"
 
@@ -127,11 +132,9 @@ PLIST
 }
 
 sign_app() {
-  local app_dir="$1"
-  local executable
-  executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_dir/Contents/Info.plist")"
-  codesign --force --sign - "$app_dir/Contents/MacOS/$executable"
-  codesign --force --sign - "$app_dir"
+  # Real Developer ID identity when CODEX_MACOS_SIGN_IDENTITY is set, otherwise
+  # ad-hoc — same fallback as before.
+  codex_codesign_app "$1"
 }
 
 verify_app() {
@@ -301,5 +304,13 @@ if [ "$DMG_CREATED" != true ]; then
   echo "error: failed to create DMG after 5 attempts" >&2
   exit 1
 fi
+
+# Sign the disk image itself (Developer ID only) and, when notary credentials
+# are configured, notarize it and staple the ticket so first launch is clean
+# offline. No-ops for ad-hoc builds.
+if codex_is_real_identity; then
+  codex_codesign_path "$DMG"
+fi
+codex_notarize "$DMG"
 
 echo "$DMG"
