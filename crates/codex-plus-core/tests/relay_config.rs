@@ -697,6 +697,36 @@ experimental_bearer_token = "sk-test-redacted"
 }
 
 #[test]
+fn portable_config_generates_provider_with_requires_openai_auth() {
+    // 回归：便携启动器用 PortableConfig::to_backend_settings 直接构造 profile，
+    // 纯 API 模式的 key 只在 auth.json。生成的 provider 必须带
+    // requires_openai_auth，否则 codex 不附 Authorization 头，中转返回 401。
+    let temp = tempfile::tempdir().unwrap();
+    let portable = codex_plus_core::portable::PortableConfig {
+        api_base_url: "https://sub2api.example.test/v1".to_string(),
+        api_key: "sk-portable-redacted".to_string(),
+        model: "gpt-5.5".to_string(),
+        provider_name: "custom".to_string(),
+        codex_app_dir: String::new(),
+        debug_port: 9229,
+        last_synced_hash: String::new(),
+    };
+    let settings = portable.to_backend_settings();
+    let profile = &settings.relay_profiles[0];
+
+    apply_relay_profile_to_home_with_switch_rules(temp.path(), profile, "").unwrap();
+    let live = std::fs::read_to_string(temp.path().join("config.toml")).unwrap();
+
+    assert!(live.contains("[model_providers.custom]"));
+    assert!(live.contains("requires_openai_auth = true"));
+    assert!(live.contains(r#"base_url = "https://sub2api.example.test/v1""#));
+    // 纯 API 模式不把 key 明文写进 provider 表，只留在 auth.json。
+    assert!(!live.contains("experimental_bearer_token"));
+    let auth = std::fs::read_to_string(temp.path().join("auth.json")).unwrap();
+    assert!(auth.contains("sk-portable-redacted"));
+}
+
+#[test]
 fn responses_profile_with_model_routes_uses_local_proxy_and_preserves_upstream() {
     let temp = tempfile::tempdir().unwrap();
     let mut profile = RelayProfile {

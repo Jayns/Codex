@@ -38,7 +38,7 @@ export LC_ALL="en_US.UTF-8"
 # LSUIElement runs directly with no Terminal window.
 #
 # Usage:
-#   scripts/installer/macos/package-portable.sh [OutputDir] [--build] [--version X.Y.Z]
+#   scripts/installer/macos/package-portable.sh [OutputDir] [--build] [--launcher-only] [--version X.Y.Z]
 #
 #   scripts/installer/macos/package-portable.sh dist/macos/portable --build
 
@@ -46,12 +46,17 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 
 OUTPUT_DIR="dist/macos/portable"
 BUILD=0
+INCLUDE_MANAGER=1
 VERSION="0.0.0"
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --build)
       BUILD=1
+      shift
+      ;;
+    --launcher-only)
+      INCLUDE_MANAGER=0
       shift
       ;;
     --version)
@@ -81,12 +86,14 @@ MANAGER_EXECUTABLE_NAME="codex-plus-plus-manager"
 # so the two never get conflated by Launch Services on a machine that has both.
 MANAGER_BUNDLE_ID="com.bigpizzav3.codexplusplus.skinmanager"
 MANAGER_BINARY_PATH="$ROOT/target/release/codex-plus-plus-manager"
-MANAGER_ICON_SOURCE_PNG="$ROOT/apps/codex-plus-manager/src-tauri/icons/icon.png"
+MANAGER_ICON_SOURCE_ICO="$ROOT/apps/codex-plus-manager/src-tauri/icons/icon.ico"
 
 if [ "$BUILD" -eq 1 ]; then
   (cd "$ROOT" && cargo build --release -p codex-plus-launcher --bin chatgpt-launcher)
-  (cd "$ROOT/apps/codex-plus-manager" && npm install --package-lock=false && npm run vite:build)
-  (cd "$ROOT" && cargo build --release -p codex-plus-manager --bin codex-plus-plus-manager)
+  if [ "$INCLUDE_MANAGER" -eq 1 ]; then
+    (cd "$ROOT/apps/codex-plus-manager" && npm install --package-lock=false && npm run vite:build)
+    (cd "$ROOT" && cargo build --release -p codex-plus-manager --bin codex-plus-plus-manager)
+  fi
 fi
 
 if [ ! -x "$BINARY_PATH" ]; then
@@ -95,7 +102,7 @@ if [ ! -x "$BINARY_PATH" ]; then
   exit 1
 fi
 
-if [ ! -x "$MANAGER_BINARY_PATH" ]; then
+if [ "$INCLUDE_MANAGER" -eq 1 ] && [ ! -x "$MANAGER_BINARY_PATH" ]; then
   echo "error: built binary not found at $MANAGER_BINARY_PATH." >&2
   echo "Pass --build, or build it manually first: (cd apps/codex-plus-manager && npm install && npm run vite:build) && cargo build --release -p codex-plus-manager --bin codex-plus-plus-manager" >&2
   exit 1
@@ -154,6 +161,9 @@ create_app() {
   chmod +x "$app_dir/Contents/MacOS/$executable_name"
 
   if [ -n "$icon_source" ] && [ -f "$icon_source" ] && command -v iconutil >/dev/null 2>&1; then
+    if [ "${icon_source##*.}" = "ico" ] && sips -s format icns "$icon_source" --out "$app_dir/Contents/Resources/$icon_name" >/dev/null; then
+      : # macOS 26 may reject otherwise valid iconsets; direct ICO conversion is more reliable.
+    else
     local icon_png="$icon_source"
     if [ "${icon_source##*.}" != "png" ]; then
       # `sips` can't scale a multi-image .ico directly past its largest
@@ -164,6 +174,7 @@ create_app() {
     fi
     build_icns "$icon_png" "$app_dir/Contents/Resources/$icon_name"
     [ "$icon_png" != "$icon_source" ] && rm -f "$icon_png"
+    fi
   fi
 
   local ls_environment=""
@@ -228,13 +239,29 @@ create_app "$APP_NAME" "$EXECUTABLE_NAME" "$BINARY_PATH" "$BUNDLE_ID" "$ICON_SOU
 # restricted to 皮肤管理, however it's launched — double-clicked directly in
 # Finder (no CLI args reach it that way) as well as via spawn_companion's
 # --skin-only from the injected ChatGPT menu.
-create_app "$MANAGER_APP_NAME" "$MANAGER_EXECUTABLE_NAME" "$MANAGER_BINARY_PATH" "$MANAGER_BUNDLE_ID" "$MANAGER_ICON_SOURCE_PNG" "false" "CODEX_PLUS_SKIN_ONLY=1"
+if [ "$INCLUDE_MANAGER" -eq 1 ]; then
+  create_app "$MANAGER_APP_NAME" "$MANAGER_EXECUTABLE_NAME" "$MANAGER_BINARY_PATH" "$MANAGER_BUNDLE_ID" "$MANAGER_ICON_SOURCE_ICO" "false" "CODEX_PLUS_SKIN_ONLY=1"
+fi
 
 APP_DIR="$OUTPUT_PATH/$APP_NAME.app"
 
 # End-user README shipped next to the .app. The bundle is only ad-hoc signed
 # (no Apple notarization), so recipients hit the Gatekeeper "无法验证" block on
 # first open; the README walks them through that and the first-run setup.
+if [ "$INCLUDE_MANAGER" -eq 1 ]; then
+  GATEKEEPER_DESCRIPTION="两个 app（${APP_NAME} 和 ${MANAGER_APP_NAME}）都未经 Apple 公证，首次打开都会提示
+\"Apple 无法验证…\"，需要各自按以下步骤解除一次："
+  SKIN_SECTION="四、更换皮肤
+在 ChatGPT 里打开 Codex++ 增强菜单 → 点击\"打开皮肤管理\"，会自动启动同目录下的
+\"${MANAGER_APP_NAME}.app\"，直接进入\"皮肤管理\"界面（其余设置项已隐藏，便携版的
+供应商/插件等设置只通过 config.ini 配置，不在这里）。
+
+五、其他说明"
+else
+  GATEKEEPER_DESCRIPTION="${APP_NAME} 未经 Apple 公证，首次打开会提示
+\"Apple 无法验证…\"，请按以下步骤解除："
+  SKIN_SECTION="四、其他说明"
+fi
 cat > "$OUTPUT_PATH/使用说明.txt" <<README
 ${APP_NAME} 使用说明
 ==============================
@@ -247,8 +274,7 @@ ${APP_NAME} 使用说明
 2. 如果 ChatGPT 应用正在运行，请先完全退出（按 Cmd+Q）。
 
 二、首次打开（解除 macOS 安全提示）
-两个 app（${APP_NAME} 和 ${MANAGER_APP_NAME}）都未经 Apple 公证，首次打开都会提示
-"Apple 无法验证…"，需要各自按以下步骤解除一次：
+${GATEKEEPER_DESCRIPTION}
 1. 双击 app，弹窗中点"完成"（不要点"移到废纸篓"）；
 2. 打开 系统设置 → 隐私与安全性，拉到最底部；
 3. 在"已阻止 xxx"提示处点"仍要打开"，再确认一次即可。
@@ -259,12 +285,7 @@ ${APP_NAME} 使用说明
 3. 点击"保存并启动 Codex"；
 4. 启动时间较长，请耐心等待，ChatGPT 应用会自动打开。
 
-四、更换皮肤
-在 ChatGPT 里打开 Codex++ 增强菜单 → 点击"打开皮肤管理"，会自动启动同目录下的
-"${MANAGER_APP_NAME}.app"，直接进入"皮肤管理"界面（其余设置项已隐藏，便携版的
-供应商/插件等设置只通过 config.ini 配置，不在这里）。
-
-五、其他说明
+${SKIN_SECTION}
 - 配置完成后，再次双击即可直接启动，不再弹出配置窗口。
 - 配置文件统一保存在：
     ~/Library/Application Support/ChatGPT Launcher/config.ini
@@ -274,6 +295,8 @@ ${APP_NAME} 使用说明
 README
 
 echo "Portable app assembled at ${APP_DIR}"
-echo "Manager app (skin-only) assembled at ${OUTPUT_PATH}/${MANAGER_APP_NAME}.app"
+if [ "$INCLUDE_MANAGER" -eq 1 ]; then
+  echo "Manager app (skin-only) assembled at ${OUTPUT_PATH}/${MANAGER_APP_NAME}.app"
+fi
 echo "README written to $OUTPUT_PATH/使用说明.txt"
 echo "First launch shows the config dialog and creates config.ini next to \"$APP_NAME.app\"."
