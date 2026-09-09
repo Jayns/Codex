@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Reference entitlements for the WKWebView-based "Codex++ 管理工具" bundle,
+  should a hardened-runtime signature make it crash on launch. Not used by
+  default: pass its path in CODEX_MACOS_ENTITLEMENTS to opt in. Each key
+  relaxes a hardened-runtime restriction the JS engine occasionally trips on.
+-->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+</dict>
+</plist>

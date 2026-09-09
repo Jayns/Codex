@@ -122,6 +122,23 @@ impl PortableConfig {
             .unwrap_or_default()
         };
 
+        // 便携模式没有 profile 编辑界面，这里预置一份最小 provider 配置作为
+        // `complete_relay_profile_config` 的输入。`requires_openai_auth` 必须
+        // 置位：纯 API 模式下 key 只写在 auth.json 的 `OPENAI_API_KEY` 里，
+        // codex 仅在 provider 标了该字段时才会把它作为 `Authorization: Bearer`
+        // 发给上游，否则中转会返回 401（缺 Authorization 头）。
+        let provider_name = match self.provider_name.trim() {
+            "" => "custom",
+            name => name,
+        };
+        let config_contents = format!(
+            "model_provider = \"custom\"\n\n\
+             [model_providers.custom]\n\
+             name = \"{provider_name}\"\n\
+             wire_api = \"responses\"\n\
+             requires_openai_auth = true\n",
+        );
+
         let mut settings = BackendSettings::default();
         settings.codex_app_path = self.codex_app_dir.clone();
         settings.relay_profiles_enabled = true;
@@ -140,6 +157,7 @@ impl PortableConfig {
             relay_mode: RelayMode::PureApi,
             official_mix_api_key: false,
             auth_contents,
+            config_contents,
             ..RelayProfile::default()
         }];
         settings
@@ -312,6 +330,11 @@ mod tests {
         let auth: serde_json::Value =
             serde_json::from_str(&profile.auth_contents).expect("auth_contents is valid JSON");
         assert_eq!(auth["OPENAI_API_KEY"], "sk-xyz");
+        // The seeded provider config must flag requires_openai_auth so codex
+        // actually sends the auth.json key as a Bearer token (otherwise the
+        // relay rejects the request with 401).
+        assert!(profile.config_contents.contains("[model_providers.custom]"));
+        assert!(profile.config_contents.contains("requires_openai_auth = true"));
     }
 
     #[test]
