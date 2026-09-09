@@ -12,7 +12,7 @@ use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadOnly};
 use objc2_app_kit::{
     NSAlert, NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSButton,
     NSModalResponse, NSModalResponseCancel, NSModalResponseOK, NSOpenPanel, NSSecureTextField,
-    NSTextField, NSView, NSWindow, NSWindowDelegate, NSWindowStyleMask,
+    NSTextAlignment, NSTextField, NSView, NSWindow, NSWindowDelegate, NSWindowStyleMask,
 };
 use objc2_foundation::{
     ns_string, MainThreadMarker, NSDate, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect,
@@ -21,21 +21,24 @@ use objc2_foundation::{
 
 use crate::portable::PortableConfig;
 
-const PAD_X: f64 = 24.0;
-const LABEL_WIDTH: f64 = 116.0;
-const LABEL_FIELD_GAP: f64 = 12.0;
+const PAD_X: f64 = 28.0;
+const LABEL_WIDTH: f64 = 132.0;
+const LABEL_FIELD_GAP: f64 = 14.0;
 const FIELD_X: f64 = PAD_X + LABEL_WIDTH + LABEL_FIELD_GAP;
-const CONTENT_WIDTH: f64 = 560.0;
+const CONTENT_WIDTH: f64 = 580.0;
 const FIELD_WIDTH: f64 = CONTENT_WIDTH - FIELD_X - PAD_X;
 const BROWSE_WIDTH: f64 = 64.0;
 const BROWSE_GAP: f64 = 8.0;
 const FIELD_WIDTH_WITH_BROWSE: f64 = FIELD_WIDTH - BROWSE_WIDTH - BROWSE_GAP;
 const ROW_HEIGHT: f64 = 24.0;
-const ROW_PITCH: f64 = 40.0;
+const ROW_PITCH: f64 = 42.0;
 const ROW_COUNT: f64 = 5.0;
-const HEADER_HEIGHT: f64 = 56.0;
+// A plain label sits a few points higher than the text baked into a bezeled
+// NSTextField of the same frame; nudge it down so the two share one baseline.
+const LABEL_BASELINE_NUDGE: f64 = -3.0;
+const HEADER_HEIGHT: f64 = 60.0;
 const FORM_HEIGHT: f64 = ROW_COUNT * ROW_PITCH;
-const FOOTER_HEIGHT: f64 = 70.0;
+const FOOTER_HEIGHT: f64 = 72.0;
 const CONTENT_HEIGHT: f64 = HEADER_HEIGHT + FORM_HEIGHT + FOOTER_HEIGHT;
 const BUTTON_HEIGHT: f64 = 32.0;
 
@@ -204,7 +207,7 @@ pub fn show_portable_config_dialog(
 
     let subtitle = NSTextField::labelWithString(ns_string!("填写 API 信息，保存后自动启动 ChatGPT"), mtm);
     subtitle.setFrame(NSRect::new(
-        NSPoint::new(PAD_X, CONTENT_HEIGHT - 34.0),
+        NSPoint::new(PAD_X, CONTENT_HEIGHT - HEADER_HEIGHT + (HEADER_HEIGHT - 20.0) / 2.0),
         NSSize::new(CONTENT_WIDTH - PAD_X * 2.0, 20.0),
     ));
     content_view.addSubview(&subtitle);
@@ -223,8 +226,9 @@ pub fn show_portable_config_dialog(
         let y = CONTENT_HEIGHT - top - ROW_HEIGHT;
 
         let label = NSTextField::labelWithString(&NSString::from_str(label_text), mtm);
+        label.setAlignment(NSTextAlignment::Right);
         label.setFrame(NSRect::new(
-            NSPoint::new(PAD_X, y + 3.0),
+            NSPoint::new(PAD_X, y + LABEL_BASELINE_NUDGE),
             NSSize::new(LABEL_WIDTH, ROW_HEIGHT),
         ));
         content_view.addSubview(&label);
