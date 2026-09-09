@@ -44,6 +44,11 @@ export LC_ALL="en_US.UTF-8"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 
+# Developer ID signing + Apple notarization (opt-in via env vars; ad-hoc
+# signing and no notarization when unset — see lib-codesign.sh).
+# shellcheck source=scripts/installer/macos/lib-codesign.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib-codesign.sh"
+
 OUTPUT_DIR="dist/macos/portable"
 BUILD=0
 INCLUDE_MANAGER=1
@@ -229,9 +234,10 @@ $ls_environment</dict>
 </plist>
 PLIST
 
-  # Ad-hoc sign so Gatekeeper doesn't flag the freshly-built bundle as damaged.
-  codesign --force --sign - "$app_dir/Contents/MacOS/$executable_name"
-  codesign --force --sign - "$app_dir"
+  # Real Developer ID identity when CODEX_MACOS_SIGN_IDENTITY is set (hardened
+  # runtime + timestamp), otherwise ad-hoc so Gatekeeper doesn't flag the
+  # freshly-built bundle as damaged.
+  codex_codesign_app "$app_dir"
 }
 
 create_app "$APP_NAME" "$EXECUTABLE_NAME" "$BINARY_PATH" "$BUNDLE_ID" "$ICON_SOURCE_ICO" "true"
@@ -245,12 +251,33 @@ fi
 
 APP_DIR="$OUTPUT_PATH/$APP_NAME.app"
 
-# End-user README shipped next to the .app. The bundle is only ad-hoc signed
-# (no Apple notarization), so recipients hit the Gatekeeper "无法验证" block on
-# first open; the README walks them through that and the first-run setup.
+# Notarize the assembled bundle(s) in one submission (Apple's notary service
+# notarizes every bundle it finds in the archive), then staple each .app so the
+# portable folder opens cleanly offline. No-op unless CODEX_MACOS_NOTARY_PROFILE
+# is set (see lib-codesign.sh).
+if [ -n "${CODEX_MACOS_NOTARY_PROFILE:-}" ]; then
+  NOTARIZE_APPS=("$APP_DIR")
+  [ "$INCLUDE_MANAGER" -eq 1 ] && NOTARIZE_APPS+=("$OUTPUT_PATH/$MANAGER_APP_NAME.app")
+  NOTARIZE_ZIP="$(mktemp -t codex-portable-notarize).zip"
+  rm -f "$NOTARIZE_ZIP"
+  ditto -c -k --sequesterRsrc --keepParent "$OUTPUT_PATH" "$NOTARIZE_ZIP"
+  codex_notarize "$NOTARIZE_ZIP" "${NOTARIZE_APPS[0]}"
+  for extra_app in "${NOTARIZE_APPS[@]:1}"; do
+    xcrun stapler staple "$extra_app"
+    xcrun stapler validate "$extra_app"
+  done
+  rm -f "$NOTARIZE_ZIP"
+fi
+
+# End-user README shipped next to the .app. Whether recipients hit the
+# Gatekeeper block on first open depends on how this package was signed:
+#   - notarized (CODEX_MACOS_NOTARY_PROFILE set): opens directly, no warning
+#   - ad-hoc / Developer ID without notarization: "Apple 无法验证…" on first open
+NOTARIZED=0
+[ -n "${CODEX_MACOS_NOTARY_PROFILE:-}" ] && NOTARIZED=1
+
 if [ "$INCLUDE_MANAGER" -eq 1 ]; then
-  GATEKEEPER_DESCRIPTION="两个 app（${APP_NAME} 和 ${MANAGER_APP_NAME}）都未经 Apple 公证，首次打开都会提示
-\"Apple 无法验证…\"，需要各自按以下步骤解除一次："
+  APP_NOUN="两个 app（${APP_NAME} 和 ${MANAGER_APP_NAME}）"
   SKIN_SECTION="四、更换皮肤
 在 ChatGPT 里打开 Codex++ 增强菜单 → 点击\"打开皮肤管理\"，会自动启动同目录下的
 \"${MANAGER_APP_NAME}.app\"，直接进入\"皮肤管理\"界面（其余设置项已隐藏，便携版的
@@ -258,10 +285,22 @@ if [ "$INCLUDE_MANAGER" -eq 1 ]; then
 
 五、其他说明"
 else
-  GATEKEEPER_DESCRIPTION="${APP_NAME} 未经 Apple 公证，首次打开会提示
-\"Apple 无法验证…\"，请按以下步骤解除："
+  APP_NOUN="${APP_NAME}"
   SKIN_SECTION="四、其他说明"
 fi
+
+if [ "$NOTARIZED" -eq 1 ]; then
+  GATEKEEPER_SECTION="二、首次打开
+${APP_NOUN}已由 Apple 公证，双击即可打开。如果 app 是从网络下载的压缩包解压出来的，
+首次打开可能会有\"是从互联网下载的\"确认框，点\"打开\"即可。"
+else
+  GATEKEEPER_SECTION="二、首次打开（解除 macOS 安全提示）
+${APP_NOUN}未经 Apple 公证，首次打开会提示\"Apple 无法验证…\"，需要按以下步骤各解除一次：
+1. 双击 app，弹窗中点\"完成\"（不要点\"移到废纸篓\"）；
+2. 打开 系统设置 → 隐私与安全性，拉到最底部；
+3. 在\"已阻止 xxx\"提示处点\"仍要打开\"，再确认一次即可。"
+fi
+
 cat > "$OUTPUT_PATH/使用说明.txt" <<README
 ${APP_NAME} 使用说明
 ==============================
@@ -273,11 +312,7 @@ ${APP_NAME} 使用说明
    ChatGPT.dmg 安装（把 ChatGPT 拖入"应用程序"文件夹）。
 2. 如果 ChatGPT 应用正在运行，请先完全退出（按 Cmd+Q）。
 
-二、首次打开（解除 macOS 安全提示）
-${GATEKEEPER_DESCRIPTION}
-1. 双击 app，弹窗中点"完成"（不要点"移到废纸篓"）；
-2. 打开 系统设置 → 隐私与安全性，拉到最底部；
-3. 在"已阻止 xxx"提示处点"仍要打开"，再确认一次即可。
+${GATEKEEPER_SECTION}
 
 三、开始使用
 1. 双击 ${APP_NAME}；
