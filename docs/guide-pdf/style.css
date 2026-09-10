@@ -1,0 +1,263 @@
+/* ============ page setup ============ */
+@page {
+  size: A4;
+  margin: 20mm 17mm 22mm 17mm;
+}
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+:root {
+  --accent: #2f7fd1;
+  --accent-deep: #1f5fa8;
+  --accent-wash: #eef5fc;
+  --ink: #1f2733;
+  --muted: #667085;
+  --line: #dce4ee;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC",
+    "Hiragino Sans GB", "Segoe UI", sans-serif;
+  font-size: 10.5pt;
+  line-height: 1.8;
+  color: var(--ink);
+  margin: 0;
+}
+
+/* hide pandoc's own title block */
+h1.title, header#title-block-header { display: none; }
+
+/* ============ cover page ============ */
+.cover {
+  break-after: page;
+  height: 232mm;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding-bottom: 24mm;
+}
+.cover-inner { width: 100%; }
+.cover-badge-icon {
+  width: 68px; height: 68px;
+  margin: 0 auto 26px;
+  border-radius: 18px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 40px; font-weight: 800;
+  line-height: 68px;
+  font-family: "Segoe UI", "Microsoft YaHei UI", sans-serif;
+}
+.cover-kicker {
+  font-size: 13pt;
+  letter-spacing: 3px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.cover-title {
+  font-size: 34pt;
+  font-weight: 800;
+  letter-spacing: 4px;
+  margin: 0 0 18px;
+  color: #14202e;
+  border: 0;
+}
+.cover-platform {
+  display: inline-block;
+  padding: 5px 18px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11pt;
+  font-weight: 600;
+  letter-spacing: 2px;
+}
+.cover-desc {
+  margin: 26px 0 0;
+  color: var(--muted);
+  font-size: 10.5pt;
+}
+.cover-rule {
+  width: 54px; height: 3px;
+  background: var(--accent);
+  margin: 30px auto 0;
+  border-radius: 2px;
+}
+.cover-foot {
+  margin-top: 16px;
+  color: #98a2b3;
+  font-size: 9pt;
+  letter-spacing: 1px;
+}
+
+/* ============ table of contents ============ */
+#cover-toc {
+  break-after: page;
+  padding-top: 30mm;
+}
+#cover-toc .toc-head {
+  font-size: 18pt;
+  font-weight: 800;
+  color: #14202e;
+  padding-bottom: 10px;
+  border-bottom: 3px solid var(--accent);
+  margin-bottom: 8px;
+}
+#cover-toc ol { list-style: none; margin: 0; padding: 0; }
+#cover-toc li {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 4px;
+  border-bottom: 1px solid var(--line);
+}
+#cover-toc .toc-n {
+  width: 34px; height: 34px;
+  flex: none;
+  border-radius: 9px;
+  background: var(--accent-wash);
+  color: var(--accent-deep);
+  font-weight: 700;
+  text-align: center;
+  line-height: 34px;
+  font-size: 12pt;
+}
+#cover-toc .toc-body { display: flex; flex-direction: column; }
+#cover-toc .toc-t { font-size: 12.5pt; font-weight: 600; color: var(--ink); }
+#cover-toc .toc-d { font-size: 9pt; color: var(--muted); margin-top: 2px; }
+
+/* ============ body headings ============ */
+h1 {
+  font-size: 19pt;
+  color: #14202e;
+  border-bottom: 3px solid var(--accent);
+  padding-bottom: 8px;
+  margin: 0 0 4px;
+}
+
+h2 {
+  font-size: 14pt;
+  color: #fff;
+  background: var(--accent);
+  margin: 0 0 16px;
+  padding: 9px 16px;
+  border-radius: 6px;
+  break-after: avoid;
+  break-inside: avoid;
+  letter-spacing: 1px;
+}
+
+h3 {
+  font-size: 11.5pt;
+  color: var(--accent-deep);
+  margin: 4px 0 9px;
+  padding-left: 11px;
+  border-left: 3px solid var(--accent);
+  break-after: avoid;
+}
+
+p { margin: 7px 0; }
+strong { color: #14202e; }
+
+ol, ul { margin: 8px 0; padding-left: 24px; }
+li { margin: 4px 0; }
+
+/* ===== one step per page (pandoc --section-divs) ===== */
+/* each top-level section (一、二 …) starts on a fresh page */
+section.level2 { break-before: page; }
+/* each numbered step keeps its heading + text + screenshot together, and
+   starts its own page — one item per page */
+section.level3 {
+  break-before: page;
+  break-inside: avoid;
+}
+/* except the first step, which shares the page with its section header */
+section.level2 > section.level3:first-of-type { break-before: avoid; }
+/* keep any heading glued to what follows it */
+h3 + p, h3 + ol, h3 + ul, h2 + h3, h2 + p { break-before: avoid; }
+
+/* ============ images ============ */
+p > img, figure img {
+  display: block;
+  max-width: 92%;
+  max-height: 190mm;
+  height: auto;
+  margin: 16px auto 4px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 2px 10px rgba(20, 40, 70, 0.10);
+  break-inside: avoid;
+}
+figure { margin: 14px 0; break-inside: avoid; }
+figcaption {
+  text-align: center;
+  color: var(--muted);
+  font-size: 8.5pt;
+  margin-top: 4px;
+}
+
+/* ============ callout (blockquote) ============ */
+blockquote {
+  margin: 16px 0;
+  padding: 12px 16px 12px 44px;
+  background: #fff7e8;
+  border: 1px solid #f0d69a;
+  border-left: 4px solid #e0a52e;
+  border-radius: 6px;
+  color: #7a5600;
+  font-size: 9.7pt;
+  position: relative;
+  break-inside: avoid;
+}
+blockquote::before {
+  content: "!";
+  position: absolute;
+  left: 15px; top: 11px;
+  width: 18px; height: 18px;
+  background: #e0a52e;
+  color: #fff;
+  font-weight: 800;
+  text-align: center;
+  line-height: 18px;
+  border-radius: 50%;
+  font-size: 11px;
+}
+blockquote p { margin: 0; }
+
+/* ============ code ============ */
+code {
+  font-family: "Cascadia Mono", "Consolas", "Courier New", monospace;
+  font-size: 9pt;
+  background: #eef1f4;
+  color: #b13a6a;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+/* ============ tables ============ */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 14px 0;
+  font-size: 9.6pt;
+  break-inside: avoid;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+th, td {
+  border: 1px solid var(--line);
+  padding: 8px 11px;
+  text-align: left;
+  vertical-align: top;
+}
+th:first-child, td:first-child { width: 24%; }
+th {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+tbody tr:nth-child(even) td, tr:nth-child(even) td { background: #f6f9fc; }
+
+a { color: var(--accent-deep); text-decoration: none; }
