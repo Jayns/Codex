@@ -100,3 +100,10 @@ pub fn windows_desktop_dir() -> Option<std::path::PathBuf> {
 pub fn windows_create_shortcut(spec: &ShortcutSpec) -> anyhow::Result<()> {
     windows_integration::create_shortcut(spec)
 }
+
+/// Reads the target path a `.lnk` shortcut points to (`None` if it can't be
+/// read as a shell link).
+#[cfg(windows)]
+pub fn windows_read_shortcut_target(path: &std::path::Path) -> Option<std::path::PathBuf> {
+    windows_integration::read_shortcut_target(path)
+}

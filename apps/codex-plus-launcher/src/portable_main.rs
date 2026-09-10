@@ -100,14 +100,15 @@ async fn run() -> Result<()> {
     #[cfg(windows)]
     apply_window_icon_to_codex();
 
-    // When the user just configured and launched, drop a desktop shortcut so
-    // they can relaunch without opening the portable folder. Created only on
-    // the configure path and only if one doesn't already exist, so a user who
-    // deletes it isn't fought.
+    // Desktop shortcut: on the first configure, drop one so the user can
+    // relaunch without opening the portable folder. On every launch, if a
+    // shortcut exists but points at a *different* exe (one left behind by an
+    // older portable copy that lived in another folder), repoint it here — so
+    // updating the portable package doesn't leave a stale shortcut. A missing
+    // shortcut on a normal launch is left missing (the user may have deleted
+    // it on purpose).
     #[cfg(windows)]
-    if configured_via_dialog {
-        let _ = create_desktop_shortcut(&app_dir);
-    }
+    let _ = ensure_desktop_shortcut(&app_dir, configured_via_dialog);
     #[cfg(not(windows))]
     let _ = configured_via_dialog;
 
@@ -147,19 +148,46 @@ fn platform_default_app_dir() -> Option<std::path::PathBuf> {
     }
 }
 
-/// Creates a "ChatGPT Launcher" desktop shortcut to this launcher (with the
-/// original Codex App icon), unless one already exists. Best-effort: failures
-/// are ignored.
+/// Best-effort "do these two paths point at the same file?": canonicalize both
+/// (handles 8.3 vs long names, `.` segments, links), falling back to a
+/// case-insensitive string compare when a path can't be resolved (e.g. an old
+/// shortcut whose target folder was since deleted).
 #[cfg(windows)]
-fn create_desktop_shortcut(app_dir: &std::path::Path) -> anyhow::Result<()> {
+fn same_file(a: &std::path::Path, b: &std::path::Path) -> bool {
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a.to_string_lossy().eq_ignore_ascii_case(&b.to_string_lossy()),
+    }
+}
+
+/// Ensures the "ChatGPT Launcher" desktop shortcut is present and points at
+/// *this* launcher (with the original Codex App icon). Best-effort: failures
+/// are ignored.
+///
+/// - Points at this exe already → left untouched.
+/// - Points elsewhere (stale shortcut from an older portable copy in another
+///   folder) → rewritten to target the current version.
+/// - Missing → created only when `create_if_missing` (the first-configure
+///   path); otherwise left missing, so a user who deleted it isn't fought.
+#[cfg(windows)]
+fn ensure_desktop_shortcut(app_dir: &std::path::Path, create_if_missing: bool) -> anyhow::Result<()> {
     let Some(desktop) = codex_plus_core::windows_desktop_dir() else {
         return Ok(());
     };
     let shortcut_path = desktop.join("ChatGPT Launcher.lnk");
+    let exe = std::env::current_exe()?;
+
     if shortcut_path.exists() {
+        if let Some(current_target) = codex_plus_core::windows_read_shortcut_target(&shortcut_path) {
+            if same_file(&current_target, &exe) {
+                return Ok(());
+            }
+        }
+        // Unreadable, or points at a different exe: fall through and overwrite.
+    } else if !create_if_missing {
         return Ok(());
     }
-    let exe = std::env::current_exe()?;
+
     let working_directory = exe.parent().map(|parent| parent.to_path_buf());
     let icon = [
         app_dir.join("app").join("resources").join("icon.ico"),

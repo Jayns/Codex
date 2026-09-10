@@ -18,7 +18,7 @@ use windows::Win32::Foundation::{
 #[cfg(windows)]
 use windows::Win32::System::Com::{
     CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx,
-    CoTaskMemFree, CoUninitialize, IPersistFile,
+    CoTaskMemFree, CoUninitialize, IPersistFile, STGM_READ,
 };
 #[cfg(windows)]
 use windows::Win32::System::Diagnostics::ToolHelp::{
@@ -142,6 +142,30 @@ pub fn create_shortcut(spec: &ShortcutSpec) -> anyhow::Result<()> {
             .context("保存快捷方式失败")?;
     }
     Ok(())
+}
+
+/// Reads the target path a `.lnk` shortcut currently points to. Returns `None`
+/// when the file is missing or can't be parsed as a shell link.
+#[cfg(windows)]
+pub fn read_shortcut_target(path: &std::path::Path) -> Option<PathBuf> {
+    let _com = ComApartment::init().ok()?;
+    unsafe {
+        let shell_link: IShellLinkW =
+            CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER).ok()?;
+        let persist_file: IPersistFile = shell_link.cast().ok()?;
+        persist_file
+            .Load(PCWSTR(wide_null(path.as_os_str()).as_ptr()), STGM_READ)
+            .ok()?;
+        let mut buf = [0u16; MAX_PATH as usize];
+        shell_link
+            .GetPath(&mut buf, std::ptr::null_mut(), 0)
+            .ok()?;
+        let len = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+        if len == 0 {
+            return None;
+        }
+        Some(PathBuf::from(OsString::from_wide(&buf[..len])))
+    }
 }
 
 #[cfg(windows)]
@@ -715,5 +739,35 @@ mod tests {
         assert!(app_score > ime_score);
         assert_eq!(ime_score, tool_score);
         assert_eq!(auxiliary_app_score, ProcessWindowScore::Fallback);
+    }
+
+    #[test]
+    fn shortcut_target_round_trips_and_can_be_repointed() {
+        let dir = std::env::temp_dir().join(format!("codexpp-lnk-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let old_exe = dir.join("old.exe");
+        let new_exe = dir.join("new.exe");
+        std::fs::write(&old_exe, b"MZ").unwrap();
+        std::fs::write(&new_exe, b"MZ").unwrap();
+        let lnk = dir.join("ChatGPT Launcher.lnk");
+
+        let spec = |target: &std::path::Path| ShortcutSpec {
+            path: lnk.clone(),
+            target: target.to_path_buf(),
+            arguments: String::new(),
+            working_directory: Some(dir.clone()),
+            description: "ChatGPT Launcher".to_string(),
+            icon: None,
+            show_minimized: false,
+        };
+
+        create_shortcut(&spec(&old_exe)).unwrap();
+        assert_eq!(read_shortcut_target(&lnk).as_deref(), Some(old_exe.as_path()));
+
+        // Simulate a portable update: overwrite the stale shortcut.
+        create_shortcut(&spec(&new_exe)).unwrap();
+        assert_eq!(read_shortcut_target(&lnk).as_deref(), Some(new_exe.as_path()));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
