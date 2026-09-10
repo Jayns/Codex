@@ -33,27 +33,35 @@
 
 ### 4. 安装官方 ChatGPT 应用
 
-启动器需要配合官方 ChatGPT 应用使用。若尚未安装，请打开包内的 `ChatGPT.dmg`，把 **ChatGPT** 拖入“应用程序”文件夹（通常安装为 `/Applications/ChatGPT.app`）。如果 ChatGPT 应用正在运行，请先按 **⌘Q** 完全退出。
+启动器需要配合官方 ChatGPT 应用使用。若尚未安装，请打开压缩包内的 `ChatGPT.dmg`，把 **ChatGPT** 拖入“应用程序”文件夹（通常安装为 `/Applications/ChatGPT.app`）。如果 ChatGPT 应用正在运行，请先按 **⌘Q** 完全退出。
 
-### 5. 首次打开：先点“完成”
+![打开压缩包内的 ChatGPT.dmg](assets/chatgpt-usage-macos/安装官方.png)
 
-解压压缩包后双击 `ChatGPT Launcher.app`。由于未经 Apple 公证，会弹出“未打开……Apple 无法验证是否包含恶意软件”。**先点“完成”**（不要点“移到废纸篓”）。
+### 5. 打开便携启动器
+
+回到压缩包解压出的文件夹，双击 **`ChatGPT Launcher`**。
+
+![双击 ChatGPT Launcher](assets/chatgpt-usage-macos/启动便携式mac.png)
+
+### 6. 首次打开被拦截：先点“完成”
+
+`ChatGPT Launcher` 未经 Apple 公证，首次打开会弹出“未打开……Apple 无法验证是否包含恶意软件”。**先点“完成”**（不要点“移到废纸篓”）。
 
 ![首次打开的安全提示](assets/chatgpt-usage-macos/未打开程序.png)
 
-### 6. 在“系统设置”中放行
+### 7. 在“系统设置”中放行
 
 打开 **系统设置 → 隐私与安全性**，滚动到“安全性”一节，在“已阻止 “ChatGPT Launcher” 以保护 Mac”处点 **“仍要打开”**（可能需要用触控 ID 或密码确认）。
 
 ![在“隐私与安全性”中点“仍要打开”](assets/chatgpt-usage-macos/仍要打开.png)
 
-### 7. 确认打开
+### 8. 确认打开
 
-在弹出的确认框中再次点 **“仍要打开”**。之后双击 `ChatGPT Launcher.app` 就能正常启动，不会再拦截。
+在弹出的确认框中再次点 **“仍要打开”**。之后双击 `ChatGPT Launcher` 就能正常启动，不会再拦截。
 
 ![确认框中再点“仍要打开”](assets/chatgpt-usage-macos/仍要打开2.png)
 
-### 8. 填写连接信息
+### 9. 填写连接信息
 
 首次启动会弹出配置窗口：
 
@@ -68,19 +76,19 @@
 
 配置会保存到 `~/Library/Application Support/ChatGPT Launcher/config.ini`。该文件包含 API Key，请妥善保管。
 
-### 9. 完成 ChatGPT 首次设置
+### 10. 完成 ChatGPT 首次设置
 
 首次运行 ChatGPT 时，按界面提示选择一个工作类别并继续。若 macOS 请求授予 ChatGPT 一次性权限，请确认发布者后点击“允许”。
 
 ![选择工作类别](assets/chatgpt-usage/步骤6-启动成功.png)
 
-### 10. 放入“应用程序”或 Dock
+### 11. 放入“应用程序”或 Dock
 
 把 `ChatGPT Launcher.app` 拖进“应用程序”文件夹或 Dock。以后单击即可启动，无需重复填写 API 信息（macOS 版不会自动创建桌面图标）。
 
 ## 三、日常使用
 
-### 11. 切换工作模式
+### 12. 切换工作模式
 
 点击左上角的 **Codex** 下拉菜单，可以在 **ChatGPT Work** 与 **Codex** 之间切换：
 
@@ -89,7 +97,7 @@
 
 ![切换工作模式](assets/chatgpt-usage/步骤8-切换模式.png)
 
-### 12. 切换模型
+### 13. 切换模型
 
 在输入框右下角点击当前模型名称，选择所需模型。只有服务商为当前 API Key 所属分组开通的模型才能正常使用。
 
@@ -101,7 +109,7 @@
 2. 或回到服务商后台，为密钥选择支持目标模型的分组后重新创建密钥。
 3. 保存配置并重新启动启动器。
 
-### 13. 开始对话
+### 14. 开始对话
 
 选择模式和模型后，直接在输入框描述需求即可。对于编程任务，建议同时说明：目标、已有代码/报错、期望输出及限制条件。
 
@@ -117,7 +125,7 @@
 
 | 现象 | 处理方式 |
 | --- | --- |
-| 首次打开被 macOS 拦截 | 按“二、安装与首次启动”的第 5–7 步操作：先点“完成”，再到 系统设置 → 隐私与安全性 点“仍要打开”，最后在确认框里再点一次“仍要打开”。 |
+| 首次打开被 macOS 拦截 | 按“二、安装与首次启动”的第 6–8 步操作：先点“完成”，再到 系统设置 → 隐私与安全性 点“仍要打开”，最后在确认框里再点一次“仍要打开”。 |
 | 启动器找不到 ChatGPT App | 在配置窗口点击“浏览”，选择“应用程序”里的官方应用（`ChatGPT.app` / `Codex.app` / `OpenAI Codex.app`）；确认已按第 4 步安装官方应用。 |
 | 双击后自动打开了“终端”窗口 | 运行的是未打包的裸可执行文件，请改用 `ChatGPT Launcher.app`。 |
 | 提示“App 已损坏，应移到废纸篓” | 压缩包经网络传输被加了隔离标记。在“终端”运行 `xattr -dr com.apple.quarantine "ChatGPT Launcher.app"` 后重试。 |
