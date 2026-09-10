@@ -30,19 +30,23 @@ if (-not (Test-Path $CodexAppDir)) {
 
 if ($Build) {
     Push-Location $repoRoot
+    $previousRustFlags = $env:RUSTFLAGS
     try {
+        # 让 Rust 与原生依赖统一静态链接 MSVC 运行时，目标电脑无需安装 VC++ 运行库。
+        $env:RUSTFLAGS = "$previousRustFlags -C target-feature=+crt-static".Trim()
         cargo build --release -p codex-plus-launcher --bin chatgpt-launcher
         if ($LASTEXITCODE -ne 0) {
             throw "cargo build failed with exit code $LASTEXITCODE"
         }
     } finally {
+        $env:RUSTFLAGS = $previousRustFlags
         Pop-Location
     }
 }
 
 $builtExe = Join-Path $repoRoot "target/release/chatgpt-launcher.exe"
 if (-not (Test-Path $builtExe)) {
-    throw "Built binary not found at $builtExe. Run with -Build, or build it manually first: cargo build --release -p codex-plus-launcher --bin chatgpt-launcher"
+    throw "Built binary not found at $builtExe. Run with -Build, or build it manually with RUSTFLAGS='-C target-feature=+crt-static': cargo build --release -p codex-plus-launcher --bin chatgpt-launcher"
 }
 
 $outputPath = Join-Path $repoRoot $OutputDir

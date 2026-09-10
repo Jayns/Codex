@@ -20,6 +20,8 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Build portable launcher
+        env:
+          RUSTFLAGS: -C target-feature=+crt-static
         run: cargo build --release -p codex-plus-launcher --bin chatgpt-launcher
 
       - name: Upload chatgpt-launcher.exe
