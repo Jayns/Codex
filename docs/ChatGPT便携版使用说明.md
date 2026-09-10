@@ -1,6 +1,6 @@
-# ChatGPT 便携版使用说明
+# ChatGPT 便携版使用说明（Windows）
 
-本说明适用于包含 `chatgpt-launcher.exe`、`codex_app` 和 `data` 目录的 Windows 便携包。首次完成配置后，后续可直接运行启动器使用。
+**适用平台：Windows 10 / 11（64 位）。** 本说明面向包含 `chatgpt-launcher.exe`、`codex_app` 和 `data` 目录的 Windows 便携包；macOS 便携版请参考对应说明。首次完成配置后，后续可直接运行启动器使用。
 
 > 安全提示：API 密钥等同于账户凭证。不要将密钥、`config.ini` 或包含密钥的截图发给他人；不再使用时请在供应商后台禁用或删除密钥。
 
@@ -42,10 +42,10 @@
 首次启动会显示配置窗口：
 
 1. **API 网址**：填写服务商提供的接口地址，通常以 `/v1` 结尾。
-2. **API Key**：粘贴刚才复制的密钥。
+2. **API Key**：粘贴从服务商网站复制的密钥。
 3. **默认模型**：填写服务商支持的模型名称，例如截图中的 `gpt-5.5`。
 4. **Provider 名称**：一般可保留 `custom`。
-5. **ChatGPT App 路径**：程序会自动查找；找不到时点击“浏览”手动选择 `Codex.exe` 所在的应用目录。
+5. **ChatGPT App 路径**：启动器会自动检测并填写；未检测到时点击“浏览”手动选择 `Codex.exe` 所在的应用目录。
 6. 点击 **保存并启动 ChatGPT**。
 
 ![首次填写 API 信息](assets/chatgpt-usage/步骤5-快捷启动.png)
