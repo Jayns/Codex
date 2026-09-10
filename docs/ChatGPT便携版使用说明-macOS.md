@@ -1,6 +1,6 @@
 # ChatGPT 便携版使用说明（macOS）
 
-**适用平台：macOS 12 (Monterey) 及以上。** 本说明面向 macOS 便携分发包（内含 `ChatGPT Launcher.app` 和 `使用说明.txt`）；Windows 便携版请参考对应说明。首次完成配置后，后续可直接运行启动器使用。
+**适用平台：macOS 12 (Monterey) 及以上。** 本说明面向 macOS 便携压缩包，包内含：官方应用安装包 `ChatGPT.dmg`、便携启动器 `ChatGPT Launcher.app`、本使用说明（macOS 版）PDF。Windows 便携版请参考对应说明。首次完成配置后，后续可直接运行启动器使用。
 
 > 安全提示：API 密钥等同于账户凭证。不要将密钥、`config.ini` 或包含密钥的截图发给他人；不再使用时请在供应商后台禁用或删除密钥。
 
@@ -33,11 +33,11 @@
 
 ### 4. 安装官方 ChatGPT 应用
 
-macOS 便携包不自带 ChatGPT 应用，需要先安装官方版：打开随包分发的 `ChatGPT.dmg`，把 **ChatGPT** 拖入“应用程序”文件夹（通常安装为 `/Applications/ChatGPT.app`）。如果 ChatGPT 应用正在运行，请先按 **⌘Q** 完全退出。
+启动器需要配合官方 ChatGPT 应用使用。若尚未安装，请打开包内的 `ChatGPT.dmg`，把 **ChatGPT** 拖入“应用程序”文件夹（通常安装为 `/Applications/ChatGPT.app`）。如果 ChatGPT 应用正在运行，请先按 **⌘Q** 完全退出。
 
 ### 5. 首次打开：先点“完成”
 
-解压便携包后双击 `ChatGPT Launcher.app`。由于未经 Apple 公证，会弹出“未打开……Apple 无法验证是否包含恶意软件”。**先点“完成”**（不要点“移到废纸篓”）。
+解压压缩包后双击 `ChatGPT Launcher.app`。由于未经 Apple 公证，会弹出“未打开……Apple 无法验证是否包含恶意软件”。**先点“完成”**（不要点“移到废纸篓”）。
 
 ![首次打开的安全提示](assets/chatgpt-usage-macos/未打开程序.png)
 
@@ -120,7 +120,7 @@ macOS 便携包不自带 ChatGPT 应用，需要先安装官方版：打开随�
 | 首次打开被 macOS 拦截 | 按“二、安装与首次启动”的第 5–7 步操作：先点“完成”，再到 系统设置 → 隐私与安全性 点“仍要打开”，最后在确认框里再点一次“仍要打开”。 |
 | 启动器找不到 ChatGPT App | 在配置窗口点击“浏览”，选择“应用程序”里的官方应用（`ChatGPT.app` / `Codex.app` / `OpenAI Codex.app`）；确认已按第 4 步安装官方应用。 |
 | 双击后自动打开了“终端”窗口 | 运行的是未打包的裸可执行文件，请改用 `ChatGPT Launcher.app`。 |
-| 提示“App 已损坏，应移到废纸篓” | 便携包经网络传输被加了隔离标记。在“终端”运行 `xattr -dr com.apple.quarantine "ChatGPT Launcher.app"` 后重试。 |
+| 提示“App 已损坏，应移到废纸篓” | 压缩包经网络传输被加了隔离标记。在“终端”运行 `xattr -dr com.apple.quarantine "ChatGPT Launcher.app"` 后重试。 |
 | 提示 API Key 无效 | 检查是否完整粘贴密钥、密钥是否已禁用，以及 API 地址是否为服务商提供的 `/v1` 地址。 |
 | 提示模型不支持或 404 | 当前密钥分组未开通该模型；请切换到可用模型，或调整服务商后台的密钥分组。 |
 | 更换 API Key 或接口地址 | 在“终端”运行 `"ChatGPT Launcher.app/Contents/MacOS/chatgpt-launcher" --config`，修改后点击“保存并启动 ChatGPT”。 |

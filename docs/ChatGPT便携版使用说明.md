@@ -1,6 +1,6 @@
 # ChatGPT 便携版使用说明（Windows）
 
-**适用平台：Windows 10 / 11（64 位）。** 本说明面向包含 `chatgpt-launcher.exe`、`codex_app` 和 `data` 目录的 Windows 便携包；macOS 便携版请参考对应说明。首次完成配置后，后续可直接运行启动器使用。
+**适用平台：Windows 10 / 11（64 位）。** 本说明面向 Windows 便携压缩包，包内含：便携启动器 `chatgpt-launcher.exe`、`codex_app` 程序目录、本使用说明 PDF。macOS 便携版请参考对应说明。首次完成配置后，后续可直接运行启动器使用。
 
 > 安全提示：API 密钥等同于账户凭证。不要将密钥、`config.ini` 或包含密钥的截图发给他人；不再使用时请在供应商后台禁用或删除密钥。
 
@@ -33,7 +33,7 @@
 
 ### 4. 运行便携启动器
 
-解压便携包后，双击 **`chatgpt-launcher.exe`** 启动。请保留 `codex_app` 与 `data` 目录，不要只单独移动这个 exe 文件。
+解压压缩包后，双击 **`chatgpt-launcher.exe`** 启动。请连同 `codex_app` 目录一起使用，不要只单独移动这个 exe 文件。
 
 ![双击 chatgpt-launcher.exe 启动](assets/chatgpt-usage/步骤4-启动快捷启动器.png)
 
@@ -113,4 +113,4 @@
 | 提示 API Key 无效 | 检查是否完整粘贴密钥、密钥是否已禁用，以及 API 地址是否为服务商提供的 `/v1` 地址。 |
 | 提示模型不支持或 404 | 当前密钥分组未开通该模型；请切换到可用模型，或调整服务商后台的密钥分组。 |
 | 更换 API Key 或接口地址 | 运行 `chatgpt-launcher.exe --config`，修改后点击“保存并启动 ChatGPT”。 |
-| 想迁移到另一台电脑 | 复制整个便携包目录；不要只复制 `chatgpt-launcher.exe`。迁移前确认目标电脑已安装或包含可用的 Codex/ChatGPT App。 |
+| 想迁移到另一台电脑 | 复制整个解压后的文件夹（含 `codex_app`）；不要只复制 `chatgpt-launcher.exe`。 |
