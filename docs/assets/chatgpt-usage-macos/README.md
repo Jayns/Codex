@@ -18,7 +18,6 @@
 
 - 4. 安装官方 ChatGPT 应用 —— `ChatGPT.dmg` 拖入“应用程序”
 - 10. 放入“应用程序”或 Dock —— 把 `ChatGPT Launcher.app` 拖进 Dock
-- 13. 更换皮肤 —— `Codex 皮肤管理工具.app` 的皮肤管理界面（仅便携包含 manager 时相关）
 
 ## 复用 Windows 版的截图（与平台无关，无需重拍）
 
