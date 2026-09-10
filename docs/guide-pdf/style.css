@@ -166,12 +166,10 @@ li { margin: 4px 0; }
 /* ===== one step per page (pandoc --section-divs) ===== */
 /* each top-level section (一、二 …) starts on a fresh page */
 section.level2 { break-before: page; }
-/* each numbered step keeps its heading + text + screenshot together, and
-   starts its own page — one item per page */
-section.level3 {
-  break-before: page;
-  break-inside: avoid;
-}
+/* a step with a screenshot gets its own page, heading + text + image never
+   split; text-only steps just flow (no point in a near-empty page) */
+section.level3 { break-inside: avoid; }
+section.level3:has(img) { break-before: page; }
 /* except the first step, which shares the page with its section header */
 section.level2 > section.level3:first-of-type { break-before: avoid; }
 /* keep any heading glued to what follows it */
