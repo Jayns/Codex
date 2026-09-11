@@ -19,10 +19,11 @@
 //! launches Codex silently. Pass `--config` to force the dialog open for
 //! editing the relay settings later.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use codex_plus_core::launcher::{LaunchHooks, LaunchOptions, launch_and_inject_with_hooks};
 use codex_plus_core::portable::PortableConfig;
 use codex_plus_launcher::LauncherHooks;
+use serde_json::json;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -85,11 +86,27 @@ async fn run() -> Result<()> {
 
     let settings = config.to_backend_settings();
     let hooks = LauncherHooks::portable();
+
+    // Refuse to run a second instance against the same Codex app. Without
+    // this, quitting Codex without the launcher noticing (missed process
+    // exit, machine sleep, force-quit) leaves the previous chatgpt-launcher
+    // process — and the helper port it still holds — running; the next
+    // double-click would otherwise try to rewrite the live relay config out
+    // from under it and then fail to bind the helper port with a raw
+    // "address in use" error. Mirrors the installed launcher's guard
+    // (main.rs::acquire_single_instance_guard) so a genuinely stale process
+    // gets cleaned up and retried, and a still-live one just gets focused.
+    let debug_port = config.debug_port;
+    let Some(_guard) = acquire_single_instance_guard(debug_port)? else {
+        activate_existing_portable_instance(&hooks, &app_dir, &settings, debug_port).await?;
+        return Ok(());
+    };
+
     hooks.apply_active_relay_profile(&settings).await?;
 
     let options = LaunchOptions {
         app_dir: Some(app_dir.clone()),
-        debug_port: config.debug_port,
+        debug_port,
         ..LaunchOptions::default()
     };
     let handle = launch_and_inject_with_hooks(options, &hooks).await?;
@@ -146,6 +163,125 @@ fn platform_default_app_dir() -> Option<std::path::PathBuf> {
     {
         codex_plus_core::app_paths::find_macos_codex_app_default()
     }
+}
+
+/// Acquires the launcher's single-instance guard (the same fixed loopback
+/// port the installed launcher uses — the two are mutually exclusive by
+/// design, since only one process may drive Codex's debug/helper ports at a
+/// time). `Ok(None)` means another instance already holds it and it looks
+/// genuinely alive; the caller should activate that instance instead of
+/// launching a second one.
+fn acquire_single_instance_guard(
+    debug_port: u16,
+) -> anyhow::Result<Option<codex_plus_core::ports::LoopbackPortGuard>> {
+    acquire_single_instance_guard_with_retry(debug_port, true)
+}
+
+fn acquire_single_instance_guard_with_retry(
+    debug_port: u16,
+    allow_stale_recovery: bool,
+) -> anyhow::Result<Option<codex_plus_core::ports::LoopbackPortGuard>> {
+    match try_acquire_single_instance_guard() {
+        Ok(guard) => Ok(Some(guard)),
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::AddrInUse
+            ) =>
+        {
+            let _ = codex_plus_core::diagnostic_log::append_diagnostic_log(
+                "launcher.already_running",
+                json!({
+                    "guard_port": codex_plus_core::ports::launcher_guard_port(),
+                    "debug_port": debug_port
+                }),
+            );
+            let stale = allow_stale_recovery && should_recover_stale_launcher(debug_port);
+            if should_retry_stale_launcher_guard(error.kind(), allow_stale_recovery, stale) {
+                codex_plus_core::watcher::stop_launcher_processes();
+                std::thread::sleep(std::time::Duration::from_millis(250));
+                return acquire_single_instance_guard_with_retry(debug_port, false);
+            }
+            Ok(None)
+        }
+        Err(error) => Err(error)
+            .with_context(|| {
+                format!(
+                    "failed to acquire launcher guard port {}",
+                    codex_plus_core::ports::launcher_guard_port()
+                )
+            })
+            .map(Some),
+    }
+}
+
+fn should_retry_stale_launcher_guard(
+    error_kind: std::io::ErrorKind,
+    allow_stale_recovery: bool,
+    stale_launcher: bool,
+) -> bool {
+    allow_stale_recovery
+        && stale_launcher
+        && matches!(
+            error_kind,
+            std::io::ErrorKind::WouldBlock | std::io::ErrorKind::AddrInUse
+        )
+}
+
+fn try_acquire_single_instance_guard() -> std::io::Result<codex_plus_core::ports::LoopbackPortGuard>
+{
+    codex_plus_core::ports::acquire_resilient_loopback_port_guard(
+        codex_plus_core::ports::launcher_guard_port(),
+    )
+}
+
+/// A launcher process is holding the guard but Codex itself is neither
+/// running nor reachable over CDP on `debug_port` — it's an orphaned
+/// process from a launch that didn't shut down cleanly, not a live
+/// instance to hand off to.
+fn should_recover_stale_launcher(debug_port: u16) -> bool {
+    let has_codex_process = !codex_plus_core::watcher::find_codex_processes().is_empty();
+    let cdp_listening = codex_plus_core::watcher::cdp_listening(debug_port);
+    let recover =
+        codex_plus_core::watcher::should_recover_stale_launcher(has_codex_process, cdp_listening);
+    let _ = codex_plus_core::diagnostic_log::append_diagnostic_log(
+        "launcher.stale_recovery_check",
+        json!({
+            "debug_port": debug_port,
+            "has_codex_process": has_codex_process,
+            "cdp_listening": cdp_listening,
+            "recover": recover
+        }),
+    );
+    recover
+}
+
+/// Another instance already holds the guard and Codex is genuinely still
+/// running under it: don't touch the live relay config or try to bind the
+/// helper port again, just bring the existing window forward. Reuses
+/// `launch_codex`'s existing "app already running" detection (it opens
+/// `-a` without relaunching), matching what the installed launcher does in
+/// `main.rs::activate_existing_codex_app` — minus the Remote Control
+/// session-recovery draining, which doesn't apply to the portable build.
+async fn activate_existing_portable_instance(
+    hooks: &LauncherHooks,
+    app_dir: &std::path::Path,
+    settings: &codex_plus_core::settings::BackendSettings,
+    debug_port: u16,
+) -> anyhow::Result<()> {
+    let launch_result = hooks
+        .launch_codex(app_dir, debug_port, settings, &settings.codex_extra_args)
+        .await;
+    let _ = codex_plus_core::diagnostic_log::append_diagnostic_log(
+        "launcher.activate_existing_codex",
+        json!({
+            "app_dir": app_dir.to_string_lossy(),
+            "debug_port": debug_port,
+            "launch_ok": launch_result.is_ok(),
+            "launch_error": launch_result.as_ref().err().map(|error| error.to_string())
+        }),
+    );
+    launch_result.map(|_| ())
 }
 
 /// Best-effort "do these two paths point at the same file?": canonicalize both
@@ -252,4 +388,84 @@ fn materialize_bundled_icon() -> Option<std::path::PathBuf> {
         return None;
     }
     Some(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stale_launcher_recovery_covers_port_and_fallback_lock_conflicts() {
+        assert!(should_retry_stale_launcher_guard(
+            std::io::ErrorKind::WouldBlock,
+            true,
+            true
+        ));
+        assert!(should_retry_stale_launcher_guard(
+            std::io::ErrorKind::AddrInUse,
+            true,
+            true
+        ));
+        assert!(!should_retry_stale_launcher_guard(
+            std::io::ErrorKind::WouldBlock,
+            false,
+            true
+        ));
+        assert!(!should_retry_stale_launcher_guard(
+            std::io::ErrorKind::WouldBlock,
+            true,
+            false
+        ));
+        assert!(!should_retry_stale_launcher_guard(
+            std::io::ErrorKind::PermissionDenied,
+            true,
+            true
+        ));
+    }
+
+    /// Locks in that the guard is acquired — and a live existing instance is
+    /// activated instead of relaunching — *before* `run()` touches the live
+    /// relay config (`apply_active_relay_profile`) or tries to bind the
+    /// helper port (`launch_and_inject_with_hooks`). Getting this ordering
+    /// wrong is exactly how a stray second launch would corrupt the running
+    /// instance's config out from under it instead of just being told no.
+    #[test]
+    fn portable_launcher_checks_the_single_instance_guard_before_touching_live_state() {
+        let source = include_str!("portable_main.rs");
+
+        let guard = source
+            .find("let Some(_guard) = acquire_single_instance_guard(debug_port)?")
+            .expect("single-instance guard check");
+        let activate = source
+            .find("activate_existing_portable_instance(&hooks, &app_dir, &settings, debug_port)")
+            .expect("existing-instance activation call");
+        let apply_relay = source
+            .find("hooks.apply_active_relay_profile(&settings).await?;")
+            .expect("relay profile apply");
+        let launch = source
+            .find("launch_and_inject_with_hooks(options, &hooks).await?")
+            .expect("launch_and_inject_with_hooks call");
+
+        assert!(guard < activate);
+        assert!(activate < apply_relay);
+        assert!(apply_relay < launch);
+    }
+
+    #[test]
+    fn existing_instance_activation_skips_remote_control_recovery_and_relay_writes() {
+        let source = include_str!("portable_main.rs");
+        let start = source
+            .find("async fn activate_existing_portable_instance")
+            .expect("existing instance activation function");
+        let end = source[start..]
+            .find("/// Best-effort \"do these two paths point at the same file?\"")
+            .map(|offset| start + offset)
+            .expect("next item after existing instance activation");
+        let body = &source[start..end];
+
+        assert!(body.contains(".launch_codex("));
+        assert!(!body.contains("apply_active_relay_profile"));
+        assert!(!body.contains("start_helper"));
+        assert!(!body.contains("run_remote_control_session_recovery"));
+    }
 }

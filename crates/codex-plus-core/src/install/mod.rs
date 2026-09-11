@@ -16,6 +16,13 @@ pub const MANAGER_NAME: &str = "Codex++ 管理工具";
 pub const MANAGER_PORTABLE_NAME: &str = "Codex 皮肤管理工具";
 pub const SILENT_BINARY: &str = "codex-plus-plus";
 pub const MACOS_SILENT_EXECUTABLE: &str = "CodexPlusPlus";
+/// Executable name of the portable launcher binary
+/// (`apps/codex-plus-launcher/src/portable_main.rs`, `[[bin]] name =
+/// "chatgpt-launcher"` in Cargo.toml — same on Windows and macOS, Cargo just
+/// appends `.exe` on Windows). Used alongside `SILENT_BINARY` wherever code
+/// needs to recognize "a Codex++ launcher process" regardless of whether it
+/// came from the installed or the portable distribution.
+pub const PORTABLE_BINARY: &str = "chatgpt-launcher";
 pub const MANAGER_BINARY: &str = "codex-plus-plus-manager";
 pub const SILENT_BUNDLE_ID: &str = "com.bigpizzav3.codexplusplus";
 pub const MANAGER_BUNDLE_ID: &str = "com.bigpizzav3.codexplusplus.manager";
