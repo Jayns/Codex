@@ -7,7 +7,8 @@
 #
 # Usage:  bash docs/guide-pdf/build.sh [windows|macos|all]   (default: all)
 #
-# Requirements: pandoc, a Chrome/Chromium/Edge binary, python with `pymupdf`.
+# Requirements: pandoc, a Chrome/Chromium/Edge binary, python or python3 with
+# `pymupdf` installed.
 # Output: output/pdf/*.pdf  (git-ignored)
 
 set -euo pipefail
@@ -37,6 +38,14 @@ if [ -z "$chrome" ]; then
   exit 1
 fi
 
+# `python` is the norm on Windows (where this script also runs, via
+# git-bash); macOS/Linux only ship `python3` by default.
+python_bin="$(command -v python 2>/dev/null || command -v python3 2>/dev/null || true)"
+if [ -z "$python_bin" ]; then
+  echo "error: no python/python3 found (needed for footer.py + pymupdf)." >&2
+  exit 1
+fi
+
 build_one() {
   local src="$1" title="$2" cover="$3" out_pdf="$out_dir/$4"
 
@@ -58,7 +67,7 @@ build_one() {
     --print-to-pdf="$tmpw/guide_raw.pdf" "file:///$tmpw/guide.html"
 
   mkdir -p "$out_dir"
-  python "$here/footer.py" "$tmpw/guide_raw.pdf" "$out_pdf" "$title"
+  "$python_bin" "$here/footer.py" "$tmpw/guide_raw.pdf" "$out_pdf" "$title"
   rm -rf "$tmp"
   echo "built $out_pdf"
 }
