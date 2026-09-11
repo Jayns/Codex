@@ -132,10 +132,24 @@ pub fn filter_killable_launcher_processes<'a>(
     processes
         .into_iter()
         .filter(|(process_id, _, exe_file)| {
-            !protected.contains(process_id) && exe_file.eq_ignore_ascii_case("codex-plus-plus.exe")
+            !protected.contains(process_id) && is_killable_launcher_executable(exe_file)
         })
         .map(|(process_id, _, _)| process_id)
         .collect()
+}
+
+/// Windows executable names recognized as "a Codex++ launcher process" for
+/// stale-process cleanup — the installed launcher (`codex-plus-plus.exe`)
+/// and the portable one (`chatgpt-launcher.exe`). Deliberately excludes the
+/// manager (`codex-plus-plus-manager.exe`), which must never be auto-killed
+/// here.
+fn is_killable_launcher_executable(exe_file: &str) -> bool {
+    [
+        crate::install::SILENT_BINARY,
+        crate::install::PORTABLE_BINARY,
+    ]
+    .iter()
+    .any(|name| exe_file.eq_ignore_ascii_case(&format!("{name}.exe")))
 }
 
 pub fn should_recover_stale_launcher(has_codex_process: bool, cdp_listening: bool) -> bool {
@@ -153,10 +167,11 @@ pub fn process_ids_still_running(
         .collect()
 }
 
-pub fn macos_launcher_process_names() -> [&'static str; 2] {
+pub fn macos_launcher_process_names() -> [&'static str; 3] {
     [
         crate::install::SILENT_BINARY,
         crate::install::MACOS_SILENT_EXECUTABLE,
+        crate::install::PORTABLE_BINARY,
     ]
 }
 

@@ -128,10 +128,25 @@ fn launcher_process_filter_protects_current_process_ancestry() {
 }
 
 #[test]
+fn launcher_process_filter_also_kills_stale_portable_launcher_processes() {
+    let processes = [
+        (10, 0, "chatgpt-launcher.exe"),
+        (20, 10, "chatgpt-launcher.exe"),
+        (30, 10, "codex-plus-plus-manager.exe"),
+        (40, 10, "Chatgpt-Launcher.exe"),
+    ];
+
+    // Same process-name matching (and manager exclusion) as the installed
+    // launcher, just recognizing the portable executable name too; 10 is
+    // protected as the current process's own ancestry.
+    assert_eq!(filter_killable_launcher_processes(processes, 10), vec![20, 40]);
+}
+
+#[test]
 fn macos_launcher_process_names_cover_development_and_packaged_binaries() {
     assert_eq!(
         macos_launcher_process_names(),
-        ["codex-plus-plus", "CodexPlusPlus"]
+        ["codex-plus-plus", "CodexPlusPlus", "chatgpt-launcher"]
     );
 }
 
